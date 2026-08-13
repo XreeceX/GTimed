@@ -1,0 +1,46 @@
+{
+  "name": "gtimed",
+  "version": "0.1.0",
+  "description": "Schedule git (and any CLI) commands for a later time or when conditions match",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "gtimed": "./dist/index.js",
+    "git-timed": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "ui",
+    "vscode-extension",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "tsx --test src/**/*.test.ts",
+    "prepare": "tsc"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "git",
+    "schedule",
+    "cron",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "Reece",
+  "dependencies": {
+    "chrono-node": "^2.7.8",
+    "cron-parser": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

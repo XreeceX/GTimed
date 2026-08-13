@@ -1,0 +1,103 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+export function homeDir(): string {
+  return process.env.GTIMED_HOME?.trim() || path.join(os.homedir(), ".gtimed");
+}
+
+export function jobsPath(): string {
+  return path.join(homeDir(), "jobs.json");
+}
+
+export function logsDir(): string {
+  return path.join(homeDir(), "logs");
+}
+
+export function shimDir(): string {
+  return path.join(homeDir(), "shim");
+}
+
+export function ensureHome(): void {
+  fs.mkdirSync(logsDir(), { recursive: true });
+  fs.mkdirSync(shimDir(), { recursive: true });
+}
+
+export type JobStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled"
+  | "skipped";
+
+export interface Job {
+  id: string;
+  name?: string;
+  createdAt: string;
+  command: string[];
+  cwd: string;
+  gitRoot?: string;
+  branch?: string;
+  at?: string;
+  cron?: string;
+  when: string[];
+  until?: string;
+  everyMs: number;
+  timeoutMs: number;
+  retry: number;
+  attempts: number;
+  requireSameBranch: boolean;
+  dryRun: boolean;
+  status: JobStatus;
+  lastCheckedAt?: string;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  lastCronMinute?: string;
+  exitCode?: number;
+  lastError?: string;
+  logFile: string;
+}
+
+interface StoreFile {
+  jobs: Job[];
+}
+
+export function loadStore(): StoreFile {
+  ensureHome();
+  const file = jobsPath();
+  if (!fs.existsSync(file)) {
+    return { jobs: [] };
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as StoreFile;
+    return { jobs: Array.isArray(raw.jobs) ? raw.jobs : [] };
+  } catch {
+    return { jobs: [] };
+  }
+}
+
+export function saveStore(store: StoreFile): void {
+  ensureHome();
+  fs.writeFileSync(jobsPath(), JSON.stringify(store, null, 2), "utf8");
+}
+
+export function getJob(id: string): Job | undefined {
+  const prefix = id.toLowerCase();
+  const matches = loadStore().jobs.filter(
+    (j) => j.id === id || j.id.toLowerCase().startsWith(prefix),
+  );
+  return matches.length === 1 ? matches[0] : matches.find((j) => j.id === id);
+}
+
+export function upsertJob(job: Job): void {
+  const store = loadStore();
+  const i = store.jobs.findIndex((j) => j.id === job.id);
+  if (i >= 0) store.jobs[i] = job;
+  else store.jobs.push(job);
+  saveStore(store);
+}
+
+export function newJobId(): string {
+  return crypto.randomUUID().slice(0, 8);
+}

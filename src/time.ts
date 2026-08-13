@@ -1,0 +1,71 @@
+import * as chrono from "chrono-node";
+
+const DURATION = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks)$/i;
+
+const UNIT_MS: Record<string, number> = {
+  ms: 1,
+  s: 1000,
+  sec: 1000,
+  secs: 1000,
+  second: 1000,
+  seconds: 1000,
+  m: 60_000,
+  min: 60_000,
+  mins: 60_000,
+  minute: 60_000,
+  minutes: 60_000,
+  h: 3_600_000,
+  hr: 3_600_000,
+  hrs: 3_600_000,
+  hour: 3_600_000,
+  hours: 3_600_000,
+  d: 86_400_000,
+  day: 86_400_000,
+  days: 86_400_000,
+  w: 604_800_000,
+  week: 604_800_000,
+  weeks: 604_800_000,
+};
+
+export function parseDurationMs(input: string): number | null {
+  const trimmed = input.trim();
+  const match = DURATION.exec(trimmed);
+  if (!match) return null;
+  const n = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  return n * (UNIT_MS[unit] ?? 0);
+}
+
+export function parseWhen(input: string, now = new Date()): Date {
+  const duration = parseDurationMs(input);
+  if (duration != null) {
+    return new Date(now.getTime() + duration);
+  }
+
+  const iso = Date.parse(input);
+  if (!Number.isNaN(iso) && looksLikeAbsoluteDate(input)) {
+    return new Date(iso);
+  }
+
+  const parsed = chrono.parseDate(input, now, { forwardDate: true });
+  if (!parsed) {
+    throw new Error(
+      `Could not parse time "${input}". Try ISO (2026-08-14T09:00), "tomorrow 5pm", or a duration like 30m / 2h.`,
+    );
+  }
+  return parsed;
+}
+
+function looksLikeAbsoluteDate(input: string): boolean {
+  return /\d{4}-\d{2}-\d{2}/.test(input) || /T\d{2}:/.test(input);
+}
+
+export function formatWhen(date: Date): string {
+  return date.toISOString();
+}
+
+export function minuteKey(date = new Date()): string {
+  const d = new Date(date);
+  d.setSeconds(0, 0);
+  return d.toISOString();
+}

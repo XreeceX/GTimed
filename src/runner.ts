@@ -1,0 +1,251 @@
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import { CronExpressionParser } from "cron-parser";
+import { evalAllConditions, repoMeta } from "./conditions.js";
+import { loadStore, logsDir, type Job, upsertJob } from "./store.js";
+import { minuteKey, parseDurationMs, parseWhen } from "./time.js";
+
+function logLine(job: Job, line: string): void {
+  fs.appendFileSync(job.logFile, `[${new Date().toISOString()}] ${line}\n`, "utf8");
+}
+
+export function dueByTime(job: Job, now: Date): boolean {
+  if (job.cron) {
+    const key = minuteKey(now);
+    if (job.lastCronMinute === key) return false;
+    try {
+      // cron-parser's prev()/next() treat currentDate as exclusive, so a tick at
+      // second 0 (Task Scheduler's default) would skip the current minute.
+      const minuteStart = new Date(now);
+      minuteStart.setSeconds(0, 0);
+      const expr = CronExpressionParser.parse(job.cron, {
+        currentDate: new Date(minuteStart.getTime() - 1),
+      });
+      return minuteKey(expr.next().toDate()) === key;
+    } catch {
+      return false;
+    }
+  }
+  if (job.at) {
+    return now.getTime() >= Date.parse(job.at);
+  }
+  return true;
+}
+
+/** Quote one argv token so cmd.exe /s /c "..." keeps it as a single argument. */
+export function quoteWinCmdArg(s: string): string {
+  if (s.length === 0) return '""';
+  const escaped = s.replace(/%/g, "%%").replace(/"/g, '""');
+  if (!/[\s&|<>()^%!"]/.test(s)) return s;
+  return `"${escaped}"`;
+}
+
+function expired(job: Job, now: Date): boolean {
+  return Boolean(job.until && now.getTime() > Date.parse(job.until));
+}
+
+function runCommand(job: Job): Promise<{ code: number }> {
+  return new Promise((resolve) => {
+    if (job.dryRun) {
+      logLine(job, `dry-run: would execute ${job.command.join(" ")}`);
+      resolve({ code: 0 });
+      return;
+    }
+
+    const opts = {
+      cwd: job.cwd,
+      env: process.env,
+      windowsHide: true,
+    };
+    // Windows + shell:true concatenates argv with spaces (breaks "Hello world"
+    // and C:\Program Files\...). Pass one quoted command line instead.
+    const child =
+      process.platform === "win32"
+        ? spawn(job.command.map(quoteWinCmdArg).join(" "), { ...opts, shell: true })
+        : spawn(job.command[0], job.command.slice(1), opts);
+
+    const out = fs.createWriteStream(job.logFile, { flags: "a" });
+    child.stdout?.pipe(out);
+    child.stderr?.pipe(out);
+
+    const timer =
+      job.timeoutMs > 0
+        ? setTimeout(() => {
+            child.kill();
+            logLine(job, `timed out after ${job.timeoutMs}ms`);
+          }, job.timeoutMs)
+        : undefined;
+
+    let settled = false;
+    const finish = (code: number) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      out.end();
+      resolve({ code });
+    };
+    child.on("error", (err) => {
+      logLine(job, `spawn error: ${err.message}`);
+      finish(1);
+    });
+    child.on("close", (code) => finish(code ?? 1));
+  });
+}
+
+export async function executeJob(job: Job): Promise<Job> {
+  job.status = "running";
+  job.lastRunAt = new Date().toISOString();
+  job.attempts += 1;
+  upsertJob(job);
+
+  if (job.requireSameBranch && job.branch) {
+    const meta = repoMeta(job.cwd);
+    if (meta.branch && meta.branch !== job.branch) {
+      job.status = "skipped";
+      job.lastError = `branch changed from ${job.branch} to ${meta.branch}`;
+      logLine(job, job.lastError);
+      upsertJob(job);
+      return job;
+    }
+  }
+
+  const cond = evalAllConditions(job);
+  if (!cond.ok) {
+    job.status = "pending";
+    job.lastError = cond.detail;
+    logLine(job, `condition not met: ${cond.detail}`);
+    upsertJob(job);
+    return job;
+  }
+
+  logLine(job, `running: ${job.command.join(" ")} (cwd=${job.cwd})`);
+  const { code } = await runCommand(job);
+  job.exitCode = code;
+  if (job.cron) job.lastCronMinute = minuteKey();
+
+  if (code === 0) {
+    job.lastError = undefined;
+    if (job.cron) {
+      job.status = "pending";
+    } else {
+      job.status = "done";
+    }
+    logLine(job, `exit 0`);
+  } else if (job.attempts <= job.retry) {
+    job.status = "pending";
+    job.lastError = `exit ${code}, will retry (${job.attempts}/${job.retry})`;
+    logLine(job, job.lastError);
+  } else {
+    job.status = "failed";
+    job.lastError = `exit ${code}`;
+    logLine(job, job.lastError);
+  }
+
+  upsertJob(job);
+  return job;
+}
+
+export async function tick(now = new Date()): Promise<Job[]> {
+  const ran: Job[] = [];
+  const jobs = loadStore().jobs.filter((j) => j.status === "pending");
+
+  for (const job of jobs) {
+    job.lastCheckedAt = now.toISOString();
+
+    if (expired(job, now)) {
+      job.status = "failed";
+      job.lastError = "deadline passed before conditions were met";
+      logLine(job, job.lastError);
+      upsertJob(job);
+      continue;
+    }
+
+    if (!dueByTime(job, now)) {
+      upsertJob(job);
+      continue;
+    }
+
+    const cond = evalAllConditions(job);
+    if (!cond.ok) {
+      job.lastError = cond.detail;
+      upsertJob(job);
+      continue;
+    }
+
+    ran.push(await executeJob(job));
+  }
+
+  return ran;
+}
+
+export function nextHint(job: Job): string {
+  if (job.cron) return `cron ${job.cron}`;
+  if (job.at) return job.at;
+  if (job.when.length) return `when ${job.when.join(" & ")}`;
+  return "soon";
+}
+
+export function buildJob(opts: {
+  command: string[];
+  cwd: string;
+  at?: string;
+  in?: string;
+  cron?: string;
+  when: string[];
+  until?: string;
+  every?: string;
+  timeout?: string;
+  retry?: string;
+  name?: string;
+  dryRun: boolean;
+  now: boolean;
+  sameBranch: boolean;
+  id: string;
+}): Job {
+  const now = new Date();
+  let at: string | undefined;
+
+  if (opts.now) {
+    at = now.toISOString();
+  } else if (opts.in) {
+    at = parseWhen(opts.in, now).toISOString();
+  } else if (opts.at) {
+    at = parseWhen(opts.at, now).toISOString();
+  }
+
+  const everyMs = opts.every ? parseDurationMs(opts.every) ?? 15_000 : 15_000;
+  const timeoutMs = opts.timeout ? parseDurationMs(opts.timeout) ?? 0 : 0;
+  const retry = opts.retry ? Number(opts.retry) : 0;
+  const meta = repoMeta(opts.cwd);
+
+  if (!opts.cron && !at && !opts.when.length) {
+    throw new Error("Provide --at, --in, --cron, --when, or --now.");
+  }
+  if (opts.cron) {
+    CronExpressionParser.parse(opts.cron);
+  }
+
+  const job: Job = {
+    id: opts.id,
+    name: opts.name,
+    createdAt: now.toISOString(),
+    command: opts.command,
+    cwd: opts.cwd,
+    gitRoot: meta.gitRoot,
+    branch: meta.branch,
+    at,
+    cron: opts.cron,
+    when: opts.when,
+    until: opts.until ? parseWhen(opts.until, now).toISOString() : undefined,
+    everyMs,
+    timeoutMs,
+    retry: Number.isFinite(retry) ? retry : 0,
+    attempts: 0,
+    requireSameBranch: opts.sameBranch,
+    dryRun: opts.dryRun,
+    status: "pending",
+    logFile: `${logsDir()}/${opts.id}.log`,
+  };
+
+  return job;
+}

@@ -1,0 +1,52 @@
+{
+  "name": "gtimed",
+  "displayName": "GTimed",
+  "description": "Schedule git commits and pushes from the Source Control view (--in, --at, --when).",
+  "version": "0.1.0",
+  "publisher": "reece",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["SCM Providers", "Other"],
+  "activationEvents": [
+    "onCommand:gtimed.scheduleCommit",
+    "onCommand:gtimed.schedulePush",
+    "onCommand:gtimed.openUi"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gtimed.scheduleCommit",
+        "title": "GTimed: Schedule Commit",
+        "icon": "$(clock)"
+      },
+      {
+        "command": "gtimed.schedulePush",
+        "title": "GTimed: Schedule Push",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "gtimed.openUi",
+        "title": "GTimed: Open Source Control UI"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "gtimed.scheduleCommit",
+          "when": "scmProvider == git",
+          "group": "navigation@10"
+        },
+        {
+          "command": "gtimed.schedulePush",
+          "when": "scmProvider == git",
+          "group": "navigation@11"
+        }
+      ],
+      "commandPalette": [
+        { "command": "gtimed.scheduleCommit" },
+        { "command": "gtimed.schedulePush" },
+        { "command": "gtimed.openUi" }
+      ]
+    }
+  }
+}

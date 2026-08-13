@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GTimed</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">GTimed</div>
+    <div class="repo" id="repoMeta">opening repo…</div>
+    <button type="button" class="ghost" id="refresh">Refresh</button>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <h1>Changes</h1>
+      <p class="hint">Same idea as an IDE Source Control view. Check a file to stage it.</p>
+      <ul id="files" class="files"></ul>
+      <p class="empty" id="noFiles" hidden>No local changes.</p>
+    </section>
+
+    <section class="panel">
+      <h1>Commit &amp; schedule</h1>
+      <textarea id="message" rows="4" placeholder="Commit message (required)"></textarea>
+
+      <fieldset class="when">
+        <legend>When</legend>
+        <label><input type="radio" name="mode" value="now" /> Now</label>
+        <label><input type="radio" name="mode" value="in" checked /> In
+          <input id="inVal" value="20m" class="short" />
+        </label>
+        <label><input type="radio" name="mode" value="at" /> At
+          <input id="atVal" type="datetime-local" class="wide" />
+        </label>
+        <label><input type="radio" name="mode" value="cron" /> Cron
+          <input id="cronVal" value="0 18 * * 1-5" class="wide" />
+        </label>
+      </fieldset>
+
+      <label class="block">Also require
+        <select id="whenCond">
+          <option value="">(none)</option>
+          <option value="clean">clean working tree</option>
+          <option value="dirty">dirty working tree</option>
+          <option value="staged">something staged</option>
+          <option value="ahead">ahead of upstream</option>
+          <option value="remote-ok">origin reachable</option>
+        </select>
+      </label>
+
+      <label class="check"><input type="checkbox" id="push" checked /> Also push (after commit, when ahead)</label>
+      <label class="check"><input type="checkbox" id="sameBranch" /> Skip if branch changes</label>
+      <label class="check"><input type="checkbox" id="dryRun" /> Dry run</label>
+
+      <button type="button" class="primary" id="go">Schedule</button>
+      <p class="status" id="status"></p>
+    </section>
+  </main>
+
+  <section class="panel jobs">
+    <h1>Jobs</h1>
+    <table>
+      <thead>
+        <tr><th>Id</th><th>Status</th><th>When</th><th>Command</th><th></th></tr>
+      </thead>
+      <tbody id="jobs"></tbody>
+    </table>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

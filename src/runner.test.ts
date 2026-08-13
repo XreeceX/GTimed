@@ -1,0 +1,157 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { buildJob, dueByTime, executeJob, quoteWinCmdArg, tick } from "./runner.js";
+import type { Job } from "./store.js";
+import { upsertJob } from "./store.js";
+import { minuteKey } from "./time.js";
+
+function isolatedHome(): string {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-home-"));
+  process.env.GTIMED_HOME = home;
+  return home;
+}
+
+function stubJob(partial: Partial<Job>): Job {
+  return {
+    id: "j1",
+    createdAt: new Date().toISOString(),
+    command: ["git", "status"],
+    cwd: process.cwd(),
+    when: [],
+    everyMs: 15_000,
+    timeoutMs: 0,
+    retry: 0,
+    attempts: 0,
+    requireSameBranch: false,
+    dryRun: true,
+    status: "pending",
+    logFile: "x.log",
+    ...partial,
+  };
+}
+
+test("cron is due at exact second 0 (Task Scheduler tick)", () => {
+  const now = new Date();
+  now.setHours(18, 0, 0, 0);
+  const job = stubJob({ cron: "0 18 * * *" });
+  assert.equal(dueByTime(job, now), true);
+});
+
+test("cron is not due a minute after the slot", () => {
+  const now = new Date();
+  now.setHours(18, 1, 0, 0);
+  const job = stubJob({ cron: "0 18 * * *" });
+  assert.equal(dueByTime(job, now), false);
+});
+
+test("cron every-minute is due at second 0", () => {
+  const now = new Date();
+  now.setSeconds(0, 0);
+  const job = stubJob({ cron: "* * * * *" });
+  assert.equal(dueByTime(job, now), true);
+});
+
+test("cron does not re-fire in the same minute", () => {
+  const now = new Date();
+  now.setSeconds(0, 0);
+  const job = stubJob({ cron: "* * * * *", lastCronMinute: minuteKey(now) });
+  assert.equal(dueByTime(job, now), false);
+});
+
+test("future --in job is not due yet", () => {
+  const now = new Date("2026-08-13T12:00:00Z");
+  const job = stubJob({ at: "2026-08-13T13:00:00.000Z" });
+  assert.equal(dueByTime(job, now), false);
+});
+
+test("past --at job is due", () => {
+  const now = new Date("2026-08-13T12:00:00Z");
+  const job = stubJob({ at: "2026-08-13T11:00:00.000Z" });
+  assert.equal(dueByTime(job, now), true);
+});
+
+test("quoteWinCmdArg keeps Program Files and messages intact", () => {
+  assert.equal(quoteWinCmdArg("git"), "git");
+  assert.equal(quoteWinCmdArg("C:\\Program Files\\nodejs\\node.exe"), '"C:\\Program Files\\nodejs\\node.exe"');
+  assert.equal(quoteWinCmdArg("Hello world"), '"Hello world"');
+  assert.equal(quoteWinCmdArg(""), '""');
+});
+
+test("executeJob preserves args with spaces", async () => {
+  isolatedHome();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-job-"));
+  const script = path.join(dir, "check.js");
+  fs.writeFileSync(script, "process.exit(process.argv[2] === 'Hello world' ? 0 : 1);\n");
+  const job = buildJob({
+    command: [process.execPath, script, "Hello world"],
+    cwd: dir,
+    when: [],
+    dryRun: false,
+    now: true,
+    sameBranch: false,
+    id: "spacearg",
+  });
+  const ran = await executeJob(job);
+  assert.equal(ran.status, "done", ran.lastError);
+});
+
+test("missing command fails instead of hanging", async () => {
+  isolatedHome();
+  const job = buildJob({
+    command: ["definitely-not-a-gtimed-binary-xyz"],
+    cwd: os.tmpdir(),
+    when: [],
+    dryRun: false,
+    now: true,
+    sameBranch: false,
+    id: "missing",
+  });
+  const ran = await Promise.race([
+    executeJob(job),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("hung")), 5_000)),
+  ]);
+  assert.equal(ran.status, "failed");
+});
+
+test("failed cron job still records lastCronMinute so daemon does not burn retries", async () => {
+  isolatedHome();
+  const job = buildJob({
+    command: [process.execPath, "-e", "process.exit(2)"],
+    cwd: os.tmpdir(),
+    cron: "* * * * *",
+    when: [],
+    dryRun: false,
+    now: false,
+    sameBranch: false,
+    retry: "3",
+    id: "cronfail",
+  });
+  const ran = await executeJob(job);
+  assert.equal(ran.status, "pending");
+  assert.ok(ran.lastCronMinute);
+  assert.equal(dueByTime(ran, new Date()), false);
+});
+
+test("tick runs a due dry-run cron job once per minute", async () => {
+  isolatedHome();
+  const job = buildJob({
+    command: ["git", "status"],
+    cwd: process.cwd(),
+    cron: "* * * * *",
+    when: [],
+    dryRun: true,
+    now: false,
+    sameBranch: false,
+    id: "crontick",
+  });
+  upsertJob(job);
+  const now = new Date();
+  now.setSeconds(0, 0);
+  const ran = await tick(now);
+  assert.equal(ran.length, 1);
+  const ran2 = await tick(now);
+  assert.equal(ran2.length, 0);
+});
