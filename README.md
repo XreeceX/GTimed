@@ -5,7 +5,7 @@
 ### Run git later — without changing git
 
 [![CI](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml/badge.svg)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-203-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-219-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![node](https://img.shields.io/badge/node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 
@@ -43,10 +43,25 @@ gtimed --when clean -- git push
 
 ## Install
 
-Node 18+ and `git` on PATH.
+No git clone needed. Copy the line for your computer, paste it, press Enter. Needs [Node.js 18+](https://nodejs.org) (npm is included).
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/XreeceX/GTimed/master/scripts/install.ps1 | iex
+```
+
+**macOS, Linux, or Git Bash**
 
 ```bash
-cd GTimed
+curl -fsSL https://raw.githubusercontent.com/XreeceX/GTimed/master/scripts/install.sh | sh
+```
+
+That downloads GTimed, builds it, puts `gtimed` on PATH, and sets up the minute tick. Open a **new** terminal afterwards.
+
+From a checkout you already have:
+
+```bash
 npm install
 npm run build
 npm install -g .
@@ -318,12 +333,13 @@ Sleeping laptops don't fire until the next tick after wake. `--every` is stored 
 ```bash
 npm install
 npm run build
-npm test          # 203 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
+npm test          # 219 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
 npx tsx src/index.ts --help
 ```
 
 ```text
 src/               CLI, parser, tick, store, tests
+scripts/           one-line installer (install.sh / install.ps1 / install.mjs)
 ui/                browser panel for gtimed ui
 vscode-extension/  SCM buttons
 ```
