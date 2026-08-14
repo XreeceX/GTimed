@@ -23,6 +23,10 @@ test("argsHaveScheduleFlags ignores plain git argv", () => {
   assert.equal(argsHaveScheduleFlags(["commit", "-m", "hi", "--include"]), false);
 });
 
+test("argsHaveScheduleFlags does not treat --log as a delay flag", () => {
+  assert.equal(argsHaveScheduleFlags(["log", "--oneline"]), false);
+});
+
 test("argsHaveScheduleFlags detects --dry-run and --now", () => {
   assert.equal(argsHaveScheduleFlags(["status", "--dry-run"]), true);
   assert.equal(argsHaveScheduleFlags(["status", "--now"]), true);

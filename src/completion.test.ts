@@ -60,6 +60,11 @@ test("gtimed li → list", () => {
   assert.ok(out.includes("list"));
 });
 
+test("gtimed u → ui", () => {
+  const out = suggestions(["gtimed", "u"], 1);
+  assert.ok(out.includes("ui"));
+});
+
 test("gtimed completion b → bash", () => {
   const out = suggestions(["gtimed", "completion", "b"], 2);
   assert.ok(out.includes("bash"));

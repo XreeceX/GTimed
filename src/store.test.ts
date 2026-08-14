@@ -149,3 +149,8 @@ test("latestJob prefers lastRunAt then createdAt", () => {
   upsertJob(job({ id: "newer", createdAt: "2026-08-14T11:00:00.000Z", command: ["git", "status"] }));
   assert.equal(latestJob()?.id, "older");
 });
+
+test("latestJob is undefined when the store is empty", () => {
+  isolatedHome();
+  assert.equal(latestJob(), undefined);
+});

@@ -193,7 +193,7 @@ export function nextHint(job: Job): string {
   return "soon";
 }
 
-/** One-line status for list / logs — never looks like the job already ran if it is still pending. */
+/** List/logs line. Pending jobs say "waiting", not "ran". */
 export function statusHint(job: Job): string {
   switch (job.status) {
     case "pending":

@@ -10,7 +10,7 @@ export function selfCommand(): { exe: string; args: string[] } {
   return { exe: process.execPath, args: [entry] };
 }
 
-/** Prefer a globally installed copy so ticks survive closing the IDE. */
+/** Use the global install when it exists, so ticks do not depend on this checkout. */
 export function persistentEntry(): { exe: string; entry: string } {
   const exe = process.execPath;
   const globalEntry = path.join(
@@ -106,7 +106,7 @@ export function installTick(): string {
       "/F",
     ]);
     return [
-      "Task Scheduler will run jobs every minute, even if Cursor is closed (PC must be on and awake).",
+      "Task Scheduler will run jobs every minute (PC must be on and awake).",
       `  task: GTimed`,
       `  logon: GTimedLogon`,
       `  runs: ${launcher}`,

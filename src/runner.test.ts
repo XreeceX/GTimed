@@ -336,6 +336,8 @@ test("statusHint does not make a pending job look finished", () => {
   assert.match(statusHint(stubJob({ status: "done", lastRunAt: "2026-08-14T10:45:00.000Z" })), /^ran /);
   assert.equal(statusHint(stubJob({ status: "cancelled" })), "cancelled");
   assert.match(statusHint(stubJob({ status: "failed", lastError: "exit 1" })), /failed exit 1/);
+  assert.equal(statusHint(stubJob({ status: "running" })), "running");
+  assert.match(statusHint(stubJob({ status: "skipped", lastError: "branch changed" })), /skipped branch changed/);
 });
 
 test("quoteWinCmdArg quotes shell metacharacters", () => {

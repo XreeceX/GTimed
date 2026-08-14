@@ -12,7 +12,7 @@ Adds **clock** and **upload** buttons to the Git Source Control title bar (the s
 
 Schedule Commit uses the message already typed in the SCM input box (or asks if it is empty), then a Quick Pick: in 5m / 20m / 1h / 2h, tomorrow 9am, when clean, or a custom `--in` / `--at` / `--when`.
 
-It runs the same engine as the CLI (`dist/index.js` in the parent folder).
+It calls the same CLI as the rest of the project (`dist/index.js` in the parent folder).
 
 ## Install into Cursor or VS Code (local)
 

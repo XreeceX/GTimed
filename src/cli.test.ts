@@ -31,6 +31,24 @@ test("gtimed list on empty store", () => {
   assert.match(r.stdout, /no jobs/);
 });
 
+test("gtimed ls is an alias of list", () => {
+  const home = isolatedHome();
+  const a = runCli(home, ["list"]);
+  const b = runCli(home, ["ls"]);
+  assert.equal(a.status, 0, a.stderr);
+  assert.equal(b.status, 0, b.stderr);
+  assert.equal(a.stdout, b.stdout);
+});
+
+test("gtimed -V prints the same version as version", () => {
+  const home = isolatedHome();
+  const a = runCli(home, ["version"]);
+  const b = runCli(home, ["-V"]);
+  assert.equal(a.status, 0, a.stderr);
+  assert.equal(b.status, 0, b.stderr);
+  assert.equal(a.stdout, b.stdout);
+});
+
 test("gtimed push --in 20m schedules git push", () => {
   const home = isolatedHome();
   const r = runCli(home, ["push", "--in", "20m"]);
@@ -174,4 +192,27 @@ test("missing schedule flag errors", () => {
   const r = runCli(home, ["push"]);
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /Provide --at, --in, --cron, --when, or --now/);
+});
+
+test("gtimed log --in schedules git log, not the log command", () => {
+  const home = isolatedHome();
+  const r = runCli(home, ["log", "--in", "20m"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /scheduled [0-9a-f]{8}/);
+  assert.match(r.stdout, /git log/);
+});
+
+test("gtimed --help mentions --log", () => {
+  const home = isolatedHome();
+  const r = runCli(home, ["--help"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /gtimed --log/);
+});
+
+test("gtimed cancel --all aborts pending jobs", () => {
+  const home = isolatedHome();
+  runCli(home, ["push", "--in", "20m"]);
+  const r = runCli(home, ["cancel", "--all"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /aborted 1 pending job/);
 });

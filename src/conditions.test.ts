@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { evalAllConditions, evalCondition, repoMeta } from "./conditions.js";
 import { git, gitRepo } from "./test-util.js";
@@ -102,6 +104,26 @@ test("behind without upstream is false", () => {
   git(dir, ["commit", "-m", "init"]);
   const r = evalCondition(dir, "behind");
   assert.equal(r.ok, false);
+});
+
+test("ahead is true after a local commit on a clone", () => {
+  const origin = gitRepo();
+  fs.writeFileSync(path.join(origin, "a.txt"), "hi");
+  git(origin, ["add", "a.txt"]);
+  git(origin, ["commit", "-m", "init"]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-clone-"));
+  fs.rmSync(dir, { recursive: true, force: true });
+  const cloned = spawnSync("git", ["clone", origin, dir], { encoding: "utf8", windowsHide: true });
+  assert.equal(cloned.status, 0, cloned.stderr || cloned.stdout);
+  git(dir, ["config", "user.email", "t@t.test"]);
+  git(dir, ["config", "user.name", "t"]);
+  git(dir, ["config", "commit.gpgsign", "false"]);
+  assert.equal(evalCondition(dir, "ahead").ok, false);
+  fs.writeFileSync(path.join(dir, "b.txt"), "x");
+  git(dir, ["add", "b.txt"]);
+  git(dir, ["commit", "-m", "local"]);
+  assert.equal(evalCondition(dir, "ahead").ok, true);
+  assert.equal(evalCondition(dir, "behind").ok, false);
 });
 
 test("unknown condition throws", () => {

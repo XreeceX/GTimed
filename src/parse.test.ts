@@ -109,6 +109,14 @@ test("FLAGS cover in at when cron now", () => {
   assert.equal(FLAGS["--now"], "boolean");
 });
 
+test("--log is a management command, not a schedule flag", () => {
+  assert.equal(MANAGEMENT.has("--log"), true);
+  assert.equal(FLAGS["--log"], undefined);
+  const p = parseScheduleArgs(["push", "--in", "5m", "--log"]);
+  assert.equal(p.in, "5m");
+  assert.deepEqual(p.command, ["git", "push", "--log"]);
+});
+
 test("every git verb used in docs is recognized", () => {
   for (const v of ["commit", "push", "fetch", "add", "pull", "status", "log"]) {
     assert.equal(GIT_VERBS.has(v), true, v);

@@ -80,6 +80,14 @@ test("parseWhen throws on unparseable input", () => {
   assert.throws(() => parseWhen("not a time at all xyz"), /Could not parse time/);
 });
 
+test("parseWhen understands tomorrow 9am", () => {
+  const now = new Date("2026-08-13T12:00:00");
+  const d = parseWhen("tomorrow 9am", now);
+  assert.equal(d.getDate(), 14);
+  assert.equal(d.getHours(), 9);
+  assert.equal(d.getMinutes(), 0);
+});
+
 test("formatWhen is ISO", () => {
   const d = new Date("2026-08-14T10:45:30.827Z");
   assert.equal(formatWhen(d), "2026-08-14T10:45:30.827Z");
