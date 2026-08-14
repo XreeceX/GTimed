@@ -4,8 +4,9 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { installCompletion, scriptFor, suggestions, uninstallCompletion } from "./completion.js";
 import { installTick, uninstallTick } from "./install.js";
-import { GIT_VERBS, MANAGEMENT, parseScheduleArgs, quote } from "./parse.js";
+import { GIT_VERBS, MANAGEMENT, canonicalCommand, parseScheduleArgs, quote } from "./parse.js";
 import { enqueueJob, executeJob, nextHint, statusHint, tick } from "./runner.js";
+import { help, helpFor, wantsHelp } from "./help.js";
 import {
   argsHaveScheduleFlags,
   discoverRealGit,
@@ -18,45 +19,9 @@ import { openBrowser, startUi } from "./ui-server.js";
 
 const VERSION = "0.1.0";
 
-function help(): string {
-  return `
-gtimed — schedule git (or any CLI) for later, on a cron, or when a condition matches.
-
-  gtimed commit --in 20m -m "Hello world"
-  gtimed push --at "tomorrow 9am"
-  gtimed fetch --cron "0 */4 * * *"
-  gtimed --when clean -- git push
-  gtimed --in 30m -- gh pr create --fill
-
-Rescheduling the same command in the same directory replaces the pending job
-with the new --in / --at / --cron / --when.
-
-Conditions (--when, repeatable; all must pass):
-  clean | dirty | staged | ahead | behind | remote-ok
-  branch=main | file=README.md | cmd:<shell, exit 0 means yes>
-
-Jobs:
-  gtimed list
-  gtimed cancel <id>              abort one job (id prefix is enough)
-  gtimed abort                    abort every pending job
-  gtimed cancel --all | last
-  gtimed logs <id>                also: gtimed --log [id|last]
-  gtimed --log                    log of the latest job
-  gtimed run <id>                 run now (still checks --when)
-  gtimed tick                     run whatever is due (call from Task Scheduler/cron)
-  gtimed daemon                   loop ticks every 15s while this process lives
-  gtimed install                  PATH + OS minute tick + tab completion
-  gtimed completion               bash | zsh | fish | powershell | install
-  gtimed ui                       Source Control GUI (browser)
-  gtimed uninstall
-
-Store: ~/.gtimed/jobs.json    Logs: ~/.gtimed/logs/<id>.log
-`.trim();
-}
-
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  const cmd = argv[0] ?? "help";
+  const cmd = canonicalCommand(argv[0] ?? "help");
 
   if (cmd === "__shim") {
     await runShim(argv.slice(1));
@@ -64,6 +29,11 @@ async function main(): Promise<void> {
   }
   if (cmd === "__complete") {
     runComplete(argv.slice(1));
+    return;
+  }
+
+  if (wantsHelp(argv)) {
+    console.log(helpFor(argv));
     return;
   }
 

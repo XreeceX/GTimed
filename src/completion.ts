@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { selfCommand } from "./install.js";
-import { FLAGS, GIT_VERBS } from "./parse.js";
+import { FLAGS, GIT_VERBS, canonicalFlag } from "./parse.js";
 import { homeDir, loadStore } from "./store.js";
 
 export const ROOT_COMMANDS = [
@@ -15,22 +15,30 @@ export const ROOT_COMMANDS = [
   "--log",
   "run",
   "tick",
+  "--tick",
   "daemon",
+  "dm",
   "install",
   "uninstall",
   "completion",
   "ui",
   "help",
+  "--help",
+  "-h",
   "version",
+  "--version",
+  "-V",
 ];
 
 export const WHEN_VALUES = [
   "clean",
   "dirty",
   "staged",
+  "stg",
   "ahead",
   "behind",
   "remote-ok",
+  "ro",
   "branch=",
   "file=",
   "cmd:",
@@ -67,15 +75,17 @@ export function suggestions(words: string[], cword: number, opts: SuggestOpts = 
 
   let pool: string[] = [];
 
-  if (bin === "git") {
+  if (bin !== "gtimed") {
     return [];
   }
 
-  if (prev === "--when") pool = WHEN_VALUES;
-  else if (prev === "--in" || prev === "--every" || prev === "--timeout") pool = DURATIONS;
-  else if (prev === "--retry") pool = ["0", "1", "2", "3"];
-  else if (prev === "--cron") pool = ["0 * * * *", "0 */4 * * *", "0 9 * * 1-5", "0 18 * * 1-5"];
-  else if (VALUE_FLAGS.has(prev)) pool = [];
+  const prevFlag = canonicalFlag(prev);
+
+  if (prevFlag === "--when") pool = WHEN_VALUES;
+  else if (prevFlag === "--in" || prevFlag === "--every" || prevFlag === "--timeout") pool = DURATIONS;
+  else if (prevFlag === "--retry") pool = ["0", "1", "2", "3"];
+  else if (prevFlag === "--cron") pool = ["0 * * * *", "0 */4 * * *", "0 9 * * 1-5", "0 18 * * 1-5"];
+  else if (VALUE_FLAGS.has(prev) || VALUE_FLAGS.has(prevFlag)) pool = [];
   else if (cword <= 1) {
     pool = [...ROOT_COMMANDS, ...GIT_VERBS, ...FLAG_NAMES];
   } else if (words[1] === "completion" && cword === 2) {

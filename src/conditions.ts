@@ -23,9 +23,14 @@ function porcelain(cwd: string): string {
   return git(cwd, ["status", "--porcelain"]).stdout;
 }
 
+const WHEN_ALIASES: Record<string, string> = {
+  ro: "remote-ok",
+  stg: "staged",
+};
+
 export function evalCondition(cwd: string, spec: string): ConditionResult {
   const raw = spec.trim();
-  const lower = raw.toLowerCase();
+  const lower = WHEN_ALIASES[raw.toLowerCase()] ?? raw.toLowerCase();
 
   if (lower === "clean") {
     const p = porcelain(cwd);
@@ -83,7 +88,7 @@ export function evalCondition(cwd: string, spec: string): ConditionResult {
   }
 
   throw new Error(
-    `Unknown condition "${spec}". Use clean, dirty, staged, ahead, behind, remote-ok, branch=<name>, file=<path>, or cmd:<shell>.`,
+    `Unknown condition "${spec}". Use clean, dirty, staged (stg), ahead, behind, remote-ok (ro), branch=<name>, file=<path>, or cmd:<shell>.`,
   );
 }
 

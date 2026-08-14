@@ -27,6 +27,12 @@ test("argsHaveScheduleFlags does not treat --log as a delay flag", () => {
   assert.equal(argsHaveScheduleFlags(["log", "--oneline"]), false);
 });
 
+test("argsHaveScheduleFlags detects short aliases", () => {
+  assert.equal(argsHaveScheduleFlags(["push", "--to", "2m"]), true);
+  assert.equal(argsHaveScheduleFlags(["push", "--sb"]), true);
+  assert.equal(argsHaveScheduleFlags(["push", "--dry"]), true);
+});
+
 test("argsHaveScheduleFlags detects --dry-run and --now", () => {
   assert.equal(argsHaveScheduleFlags(["status", "--dry-run"]), true);
   assert.equal(argsHaveScheduleFlags(["status", "--now"]), true);

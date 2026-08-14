@@ -1,3 +1,13 @@
+/** First-token shortcuts. Short names (list/ls, tick, run) stay as they are. */
+export const COMMAND_ALIASES: Record<string, string> = {
+  "--tick": "tick",
+  dm: "daemon",
+};
+
+export function canonicalCommand(cmd: string): string {
+  return COMMAND_ALIASES[cmd] ?? cmd;
+}
+
 export const MANAGEMENT = new Set([
   "list",
   "ls",
@@ -64,6 +74,18 @@ export const GIT_VERBS = new Set([
 
 export type FlagKind = "value" | "boolean" | "repeat";
 
+export const FLAG_ALIASES: Record<string, string> = {
+  "--to": "--timeout",
+  "--sb": "--same-branch",
+  "--dry": "--dry-run",
+  "--rt": "--retry",
+  "--til": "--until",
+};
+
+export function canonicalFlag(flag: string): string {
+  return FLAG_ALIASES[flag] ?? flag;
+}
+
 export const FLAGS: Record<string, FlagKind> = {
   "--at": "value",
   "--in": "value",
@@ -79,6 +101,10 @@ export const FLAGS: Record<string, FlagKind> = {
   "--now": "boolean",
   "--same-branch": "boolean",
 };
+
+for (const [alias, canon] of Object.entries(FLAG_ALIASES)) {
+  FLAGS[alias] = FLAGS[canon]!;
+}
 
 export interface ParsedCli {
   command: string[];
@@ -114,7 +140,8 @@ export function parseScheduleArgs(argv: string[]): ParsedCli {
     }
 
     const eq = arg.indexOf("=");
-    const flag = eq >= 0 && arg.startsWith("--") ? arg.slice(0, eq) : arg;
+    const rawFlag = eq >= 0 && arg.startsWith("--") ? arg.slice(0, eq) : arg;
+    const flag = canonicalFlag(rawFlag);
     const inline = eq >= 0 && arg.startsWith("--") ? arg.slice(eq + 1) : undefined;
     const kind = FLAGS[flag];
 

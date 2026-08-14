@@ -44,9 +44,12 @@ test("gtimed -V prints the same version as version", () => {
   const home = isolatedHome();
   const a = runCli(home, ["version"]);
   const b = runCli(home, ["-V"]);
+  const c = runCli(home, ["--version"]);
   assert.equal(a.status, 0, a.stderr);
   assert.equal(b.status, 0, b.stderr);
+  assert.equal(c.status, 0, c.stderr);
   assert.equal(a.stdout, b.stdout);
+  assert.equal(a.stdout, c.stdout);
 });
 
 test("gtimed push --in 20m schedules git push", () => {
@@ -66,6 +69,23 @@ test("gtimed tick on a future job says nothing due and still waiting", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /nothing due to run/);
   assert.match(r.stdout, /still waiting:/);
+});
+
+test("gtimed --tick is the same as tick", () => {
+  const home = isolatedHome();
+  runCli(home, ["push", "--in", "20m"]);
+  const a = runCli(home, ["tick"]);
+  const b = runCli(home, ["--tick"]);
+  assert.equal(a.status, 0, a.stderr);
+  assert.equal(b.status, 0, b.stderr);
+  assert.equal(a.stdout, b.stdout);
+});
+
+test("gtimed --sb --dry --to schedules with the long-flag meaning", () => {
+  const home = isolatedHome();
+  const r = runCli(home, ["status", "--now", "--sb", "--dry", "--to", "2m"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /[0-9a-f]{8} -> done/);
 });
 
 test("reschedule prints updated and keeps one job", () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FLAGS, GIT_VERBS, MANAGEMENT, parseScheduleArgs, quote } from "./parse.js";
+import { COMMAND_ALIASES, FLAGS, GIT_VERBS, MANAGEMENT, canonicalCommand, parseScheduleArgs, quote } from "./parse.js";
 import { argsHaveScheduleFlags } from "./shim.js";
 
 test("strips schedule flags and implies git", () => {
@@ -107,6 +107,15 @@ test("FLAGS cover in at when cron now", () => {
   assert.equal(FLAGS["--in"], "value");
   assert.equal(FLAGS["--when"], "repeat");
   assert.equal(FLAGS["--now"], "boolean");
+  assert.equal(FLAGS["--to"], "value");
+  assert.equal(FLAGS["--sb"], "boolean");
+});
+
+test("command aliases", () => {
+  assert.equal(canonicalCommand("--tick"), "tick");
+  assert.equal(canonicalCommand("dm"), "daemon");
+  assert.equal(canonicalCommand("tick"), "tick");
+  assert.equal(COMMAND_ALIASES["--tick"], "tick");
 });
 
 test("--log is a management command, not a schedule flag", () => {
@@ -115,6 +124,33 @@ test("--log is a management command, not a schedule flag", () => {
   const p = parseScheduleArgs(["push", "--in", "5m", "--log"]);
   assert.equal(p.in, "5m");
   assert.deepEqual(p.command, ["git", "push", "--log"]);
+});
+
+test("long-flag aliases map to the same fields", () => {
+  const p = parseScheduleArgs([
+    "push",
+    "--in",
+    "5m",
+    "--to",
+    "2m",
+    "--sb",
+    "--dry",
+    "--rt",
+    "3",
+    "--til",
+    "Fri 6pm",
+  ]);
+  assert.equal(p.timeout, "2m");
+  assert.equal(p.sameBranch, true);
+  assert.equal(p.dryRun, true);
+  assert.equal(p.retry, "3");
+  assert.equal(p.until, "Fri 6pm");
+  assert.deepEqual(p.command, ["git", "push"]);
+});
+
+test("inline --to=2m is timeout", () => {
+  const p = parseScheduleArgs(["push", "--in", "5m", "--to=2m"]);
+  assert.equal(p.timeout, "2m");
 });
 
 test("every git verb used in docs is recognized", () => {

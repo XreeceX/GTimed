@@ -2,23 +2,10 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { FLAGS } from "./parse.js";
 import { homeDir, shimDir } from "./store.js";
 
-export const SHIM_FLAGS = new Set([
-  "--at",
-  "--in",
-  "--cron",
-  "--when",
-  "--until",
-  "--every",
-  "--timeout",
-  "--retry",
-  "--name",
-  "--cwd",
-  "--dry-run",
-  "--now",
-  "--same-branch",
-]);
+export const SHIM_FLAGS = new Set(Object.keys(FLAGS));
 
 export function argsHaveScheduleFlags(argv: string[]): boolean {
   return argv.some((a) => SHIM_FLAGS.has(a.split("=")[0]));

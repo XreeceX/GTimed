@@ -5,7 +5,7 @@
 ### Run git later — without changing git
 
 [![CI](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml/badge.svg)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-161-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-186-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![node](https://img.shields.io/badge/node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 
@@ -155,17 +155,43 @@ Need at least one of `--at`, `--in`, `--cron`, `--when`, or `--now`.
 | `--at` | `--at "tomorrow 5pm"` | Once, at that time |
 | `--cron` | `--cron "0 18 * * 1-5"` | Each matching minute (stays pending) |
 | `--when` | `--when clean` | Repeatable; all must pass at fire time |
-| `--until` | `--until "Fri 6pm"` | Give up if conditions never match |
+| `--until` / `--til` | `--til "Fri 6pm"` | Give up if conditions never match |
 | `--now` | `--now` | Run on this invocation (still honors `--when`) |
-| `--dry-run` | `--dry-run` | Log the command, don't spawn it |
-| `--same-branch` | `--same-branch` | Skip if HEAD moved since you scheduled |
+| `--dry-run` / `--dry` | `--dry` | Log the command, don't spawn it |
+| `--same-branch` / `--sb` | `--sb` | Skip if HEAD moved since you scheduled |
 | `--cwd` | `--cwd ../other-repo` | Working directory (default: here) |
 | `--name` | `--name evening-push` | Label in `gtimed list` |
-| `--timeout` | `--timeout 2m` | Kill the process after this |
-| `--retry` | `--retry 3` | Extra tries after a non-zero exit |
+| `--timeout` / `--to` | `--to 2m` | Kill the process after this |
+| `--retry` / `--rt` | `--rt 3` | Extra tries after a non-zero exit |
 | `--every` | `--every 15s` | Stored on the job; OS tick is still 1 min / daemon 15s |
+| `-h`, `--help` | `gtimed --help` | Show usage, commands, and flags |
+| `-V`, `--version` | `gtimed --version` | Print version |
 
 `--at` uses [chrono-node](https://github.com/wanasit/chrono). Cron is 5-field via [cron-parser](https://github.com/harrisiirak/cron-parser).
+
+### Shortcuts
+
+These only apply to `gtimed` itself. The command name stays `gtimed` — we do not install `gt`, because [Graphite](https://graphite.com/docs/install-the-cli) already uses that. Short flags like `--in` / `--at` / `--now` stay as they are. Git's own flags (`-m`, `-a`, `-C`, ffmpeg's `-to`, …) are left alone.
+
+| Long | Short |
+| --- | --- |
+| `list` | `ls` |
+| `tick` | `--tick` |
+| `daemon` | `dm` |
+| `--timeout` | `--to` |
+| `--same-branch` | `--sb` |
+| `--dry-run` | `--dry` |
+| `--retry` | `--rt` |
+| `--until` | `--til` |
+| `--when staged` | `--when stg` |
+| `--when remote-ok` | `--when ro` |
+
+```bash
+gtimed push --in 20m --sb --to 2m --dry
+gtimed --tick
+```
+
+If a wrapped tool also uses `--to` / `--dry` / `--rt`, put `--` in front of that command.
 
 ---
 
@@ -177,10 +203,10 @@ Every spec must pass. Checked in the job's `cwd` when it fires, not when you typ
 | --- | --- |
 | `clean` | `git status --porcelain` is empty |
 | `dirty` | working tree has changes |
-| `staged` | index has staged files |
+| `staged` / `stg` | index has staged files |
 | `ahead` | local commits not in upstream (`@{u}..HEAD`) — no fetch |
 | `behind` | upstream has commits you don't (`HEAD..@{u}`) — no fetch |
-| `remote-ok` | `git ls-remote origin HEAD` works |
+| `remote-ok` / `ro` | `git ls-remote origin HEAD` works |
 | `branch=main` | current branch is `main` |
 | `file=src/app.ts` | that path is dirty |
 | `cmd:<shell>` | command exits `0` |
@@ -209,13 +235,13 @@ gtimed logs <id>
 gtimed --log                # latest job
 gtimed --log <id>           # also: --log last
 gtimed run <id>
-gtimed tick
-gtimed daemon               # tick every 15s in this terminal
+gtimed tick                 # also: --tick
+gtimed daemon               # also: dm  (tick every 15s in this terminal)
 gtimed install / uninstall
 gtimed completion install
 gtimed ui
-gtimed help
-gtimed version
+gtimed help                 # also: -h, --help
+gtimed version              # also: -V, --version
 ```
 
 Statuses: `pending` → `running` → `done` | `failed` | `cancelled` | `skipped`.
@@ -292,7 +318,7 @@ Sleeping laptops don't fire until the next tick after wake. `--every` is stored 
 ```bash
 npm install
 npm run build
-npm test          # 161 tests (Ubuntu, Windows, macOS × Node 18 and 22)
+npm test          # 186 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
 npx tsx src/index.ts --help
 ```
 

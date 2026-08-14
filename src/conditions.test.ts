@@ -60,6 +60,21 @@ test("staged detects the index", () => {
   assert.equal(evalCondition(dir, "staged").ok, true);
 });
 
+test("stg is an alias of staged", () => {
+  const dir = gitRepo();
+  fs.writeFileSync(path.join(dir, "a.txt"), "hi");
+  git(dir, ["add", "a.txt"]);
+  assert.equal(evalCondition(dir, "stg").ok, true);
+});
+
+test("ro is an alias of remote-ok", () => {
+  const dir = gitRepo();
+  const full = evalCondition(dir, "remote-ok");
+  const short = evalCondition(dir, "ro");
+  assert.equal(short.ok, full.ok);
+  assert.equal(short.detail, full.detail);
+});
+
 test("branch= matches current branch", () => {
   const dir = gitRepo();
   fs.writeFileSync(path.join(dir, "a.txt"), "hi");
