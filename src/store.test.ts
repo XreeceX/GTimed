@@ -9,6 +9,7 @@ import {
   findPendingDuplicate,
   getJob,
   jobsPath,
+  latestJob,
   loadStore,
   newJobId,
   pendingJobs,
@@ -140,4 +141,11 @@ test("cancelOtherPendingDuplicates leaves keepId", () => {
   assert.equal(dropped[0]?.id, "drop");
   assert.equal(getJob("keep")?.status, "pending");
   assert.equal(getJob("drop")?.status, "cancelled");
+});
+
+test("latestJob prefers lastRunAt then createdAt", () => {
+  isolatedHome();
+  upsertJob(job({ id: "older", createdAt: "2026-08-14T10:00:00.000Z", lastRunAt: "2026-08-14T12:00:00.000Z" }));
+  upsertJob(job({ id: "newer", createdAt: "2026-08-14T11:00:00.000Z", command: ["git", "status"] }));
+  assert.equal(latestJob()?.id, "older");
 });

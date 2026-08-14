@@ -167,3 +167,14 @@ export function upsertJob(job: Job): void {
 export function newJobId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
+
+/** Most recently run job, or most recently created if none have run. */
+export function latestJob(): Job | undefined {
+  const jobs = loadStore().jobs;
+  if (!jobs.length) return undefined;
+  return [...jobs].sort((a, b) => {
+    const ta = a.lastRunAt ?? a.createdAt;
+    const tb = b.lastRunAt ?? b.createdAt;
+    return tb.localeCompare(ta);
+  })[0];
+}

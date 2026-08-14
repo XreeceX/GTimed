@@ -54,6 +54,7 @@ Then:
 ```bash
 gtimed list              # queue
 gtimed logs <id>         # output of a job
+gtimed --log             # latest job's log
 gtimed cancel <id>       # abort one (id prefix is enough)
 gtimed cancel last
 gtimed abort             # abort every pending job
@@ -182,6 +183,8 @@ gtimed cancel last          # abort the most recently scheduled pending job
 gtimed cancel --all         # abort every pending job
 gtimed abort                # same as cancel --all
 gtimed logs <id>
+gtimed --log                # latest job
+gtimed --log <id>           # also: gtimed --log last
 gtimed run <id>             # fire now; still checks --when and --same-branch
 gtimed tick                 # run every due pending job, then exit
 gtimed daemon               # tick every 15s in this terminal
@@ -196,7 +199,7 @@ Statuses: `pending` → `running` → `done` | `failed` | `cancelled` | `skipped
 
 Cron jobs that succeed go back to `pending`. One-shot jobs become `done`. Failed `--when` before `--until` leave the job `pending` for the next tick.
 
-IDs are 8 hex chars. `gtimed logs abc` works if that prefix is unique. Rescheduling prints `updated <id>` instead of `scheduled <id>`.
+IDs are 8 hex chars. `gtimed logs abc` and `gtimed --log abc` work if that prefix is unique. `gtimed --log` (no id) prints the latest job. Rescheduling prints `updated <id>` instead of `scheduled <id>`.
 
 ---
 

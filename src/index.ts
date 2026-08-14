@@ -13,7 +13,7 @@ import {
   removeShim,
   removeShimFromUserPath,
 } from "./shim.js";
-import { cancelPending, getJob, loadStore, pendingJobs, shimDir } from "./store.js";
+import { cancelPending, getJob, latestJob, loadStore, pendingJobs, shimDir } from "./store.js";
 import { openBrowser, startUi } from "./ui-server.js";
 
 const VERSION = "0.1.0";
@@ -40,7 +40,8 @@ Jobs:
   gtimed cancel <id>              abort one job (id prefix is enough)
   gtimed abort                    abort every pending job
   gtimed cancel --all | last
-  gtimed logs <id>
+  gtimed logs <id>                also: gtimed --log [id|last]
+  gtimed --log                    log of the latest job
   gtimed run <id>                 run now (still checks --when)
   gtimed tick                     run whatever is due (call from Task Scheduler/cron)
   gtimed daemon                   loop ticks every 15s while this process lives
@@ -63,6 +64,12 @@ async function main(): Promise<void> {
   }
   if (cmd === "__complete") {
     runComplete(argv.slice(1));
+    return;
+  }
+
+  if (cmd === "--log" || cmd.startsWith("--log=")) {
+    const rest = cmd.startsWith("--log=") ? [cmd.slice("--log=".length), ...argv.slice(1)] : argv.slice(1);
+    handleLogs(rest);
     return;
   }
 
@@ -94,17 +101,9 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       handleCancel(cmd, rest);
       return;
     }
-    case "logs": {
-      const id = rest[0];
-      if (!id) throw new Error("usage: gtimed logs <id>");
-      const job = requireJob(id);
-      if (!fs.existsSync(job.logFile)) {
-        console.log("(no log yet)");
-        return;
-      }
-      console.log(fs.readFileSync(job.logFile, "utf8"));
+    case "logs":
+      handleLogs(rest);
       return;
-    }
     case "run": {
       const id = rest[0];
       if (!id) throw new Error("usage: gtimed run <id>");
@@ -237,6 +236,21 @@ function handleCancel(cmd: string, rest: string[]): void {
   for (const job of cancelled) {
     console.log(`cancelled ${job.id}  ${job.command.join(" ")}`);
   }
+}
+
+function handleLogs(rest: string[]): void {
+  const arg = rest[0];
+  const job = !arg || arg === "last" ? latestJob() : requireJob(arg);
+  if (!job) {
+    console.log("no jobs");
+    return;
+  }
+  console.log(`# ${job.id}  ${job.status}  ${quote(job.command)}`);
+  if (!fs.existsSync(job.logFile)) {
+    console.log("(no log yet)");
+    return;
+  }
+  process.stdout.write(fs.readFileSync(job.logFile, "utf8"));
 }
 
 function handleCompletion(rest: string[]): void {

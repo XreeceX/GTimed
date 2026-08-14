@@ -7,6 +7,7 @@ export const MANAGEMENT = new Set([
   "status",
   "logs",
   "log",
+  "--log",
   "run",
   "tick",
   "daemon",

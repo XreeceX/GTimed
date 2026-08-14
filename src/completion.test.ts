@@ -85,6 +85,16 @@ test("gtimed logs matches job ids from opts", () => {
   assert.deepEqual(out, ["ff00aa"]);
 });
 
+test("gtimed --l → --log", () => {
+  const out = suggestions(["gtimed", "--l"], 1);
+  assert.ok(out.includes("--log"));
+});
+
+test("gtimed --log suggests last and job ids", () => {
+  const out = suggestions(["gtimed", "--log", "la"], 2, { jobs: ["abc123"] });
+  assert.deepEqual(out, ["last"]);
+});
+
 test("root commands do not include shim", () => {
   const out = suggestions(["gtimed", "sh"], 1);
   assert.ok(!out.includes("shim"));

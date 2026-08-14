@@ -86,6 +86,46 @@ test("gtimed logs unknown id fails", () => {
   assert.match(r.stderr, /unknown job/);
 });
 
+test("gtimed --log with no jobs", () => {
+  const home = isolatedHome();
+  const r = runCli(home, ["--log"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /no jobs/);
+});
+
+test("gtimed --log prints the latest job log", () => {
+  const home = isolatedHome();
+  const ran = runCli(home, ["status", "--now", "--dry-run"]);
+  assert.equal(ran.status, 0, ran.stderr);
+  const id = /ran ([0-9a-f]{8})/.exec(ran.stdout)?.[1];
+  assert.ok(id);
+  const log = runCli(home, ["--log"]);
+  assert.equal(log.status, 0, log.stderr);
+  assert.match(log.stdout, new RegExp(`# ${id}`));
+  assert.match(log.stdout, /dry-run: would execute git status/);
+});
+
+test("gtimed --log last and logs default to latest", () => {
+  const home = isolatedHome();
+  runCli(home, ["status", "--now", "--dry-run"]);
+  const a = runCli(home, ["--log", "last"]);
+  const b = runCli(home, ["logs"]);
+  assert.equal(a.status, 0, a.stderr);
+  assert.equal(b.status, 0, b.stderr);
+  assert.equal(a.stdout, b.stdout);
+});
+
+test("gtimed --log=<id> prints that job", () => {
+  const home = isolatedHome();
+  const first = runCli(home, ["push", "--in", "20m"]);
+  const id = /scheduled ([0-9a-f]{8})/.exec(first.stdout)?.[1];
+  assert.ok(id);
+  const log = runCli(home, [`--log=${id}`]);
+  assert.equal(log.status, 0, log.stderr);
+  assert.match(log.stdout, new RegExp(`# ${id}`));
+  assert.match(log.stdout, /\(no log yet\)/);
+});
+
 test("gtimed --now --dry-run runs immediately", () => {
   const home = isolatedHome();
   const r = runCli(home, ["status", "--now", "--dry-run"]);
