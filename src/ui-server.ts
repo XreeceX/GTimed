@@ -15,10 +15,16 @@ const MIME: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
 };
 
+let cachedUiRoot: string | undefined;
+
 export function uiRoot(): string {
+  if (cachedUiRoot) return cachedUiRoot;
   const here = path.dirname(fileURLToPath(import.meta.url));
   for (const dir of [path.join(here, "..", "ui"), path.join(process.cwd(), "ui")]) {
-    if (fs.existsSync(path.join(dir, "index.html"))) return dir;
+    if (fs.existsSync(path.join(dir, "index.html"))) {
+      cachedUiRoot = dir;
+      return dir;
+    }
   }
   throw new Error("ui/ folder not found (expected index.html next to the project root)");
 }
@@ -47,13 +53,19 @@ export function resolveUiFile(root: string, urlPath: string): string | null {
 }
 
 function serveStatic(res: http.ServerResponse, urlPath: string): void {
-  const root = uiRoot();
-  const file = resolveUiFile(root, urlPath);
+  const file = resolveUiFile(uiRoot(), urlPath);
   if (!file) {
     res.writeHead(403).end("forbidden");
     return;
   }
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+  let st: fs.Stats;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    res.writeHead(404).end("not found");
+    return;
+  }
+  if (st.isDirectory()) {
     res.writeHead(404).end("not found");
     return;
   }

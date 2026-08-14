@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { installCompletion, scriptFor, suggestions, uninstallCompletion } from "./completion.js";
-import { installTick, uninstallTick } from "./install.js";
 import { GIT_VERBS, MANAGEMENT, canonicalCommand, parseScheduleArgs, quote } from "./parse.js";
 import { enqueueJob, executeJob, nextHint, statusHint, tick } from "./runner.js";
 import { help, helpFor, wantsHelp } from "./help.js";
-import { diagnose } from "./suggest.js";
-import {
-  argsHaveScheduleFlags,
-  discoverRealGit,
-  ensureNpmOnUserPath,
-  removeShim,
-  removeShimFromUserPath,
-} from "./shim.js";
 import { cancelPending, getJob, latestJob, loadStore, pendingJobs, shimDir, type Job } from "./store.js";
-import { openBrowser, startUi } from "./ui-server.js";
 
 const VERSION = "0.1.0";
+
+function skipDiagnose(argv: string[], cmd: string): boolean {
+  if (argv.length === 0) return true;
+  if (argv.length !== 1) return false;
+  return (
+    (MANAGEMENT.has(cmd) && !GIT_VERBS.has(cmd)) ||
+    GIT_VERBS.has(cmd) ||
+    cmd === "git" ||
+    cmd === "--log" ||
+    cmd.startsWith("--log=")
+  );
+}
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -29,7 +29,8 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "__complete") {
-    runComplete(argv.slice(1));
+    const { suggestions } = await import("./completion.js");
+    runComplete(argv.slice(1), suggestions);
     return;
   }
 
@@ -38,11 +39,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const problem = diagnose(argv);
-  if (problem) {
-    console.error(problem);
-    process.exitCode = 2;
-    return;
+  if (!skipDiagnose(argv, cmd)) {
+    const { diagnose } = await import("./suggest.js");
+    const problem = diagnose(argv);
+    if (problem) {
+      console.error(problem);
+      process.exitCode = 2;
+      return;
+    }
   }
 
   if (cmd === "--log" || cmd.startsWith("--log=")) {
@@ -102,6 +106,9 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       return;
     }
     case "install": {
+      const { ensureNpmOnUserPath, removeShim, removeShimFromUserPath } = await import("./shim.js");
+      const { installTick } = await import("./install.js");
+      const { installCompletion } = await import("./completion.js");
       console.log(removeShimFromUserPath(shimDir()));
       removeShim();
       console.log(ensureNpmOnUserPath());
@@ -114,15 +121,19 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       console.log('  gtimed commit --in 20m -m "Hello world"');
       return;
     }
-    case "uninstall":
+    case "uninstall": {
+      const { removeShim, removeShimFromUserPath } = await import("./shim.js");
+      const { uninstallTick } = await import("./install.js");
+      const { uninstallCompletion } = await import("./completion.js");
       console.log(uninstallTick());
       console.log(removeShimFromUserPath(shimDir()));
       removeShim();
       console.log(uninstallCompletion());
       console.log("Uninstalled gtimed tick, leftover git shim, and completion hooks.");
       return;
+    }
     case "completion":
-      handleCompletion(rest);
+      await handleCompletion(rest);
       return;
     case "ui":
       await startUiCli(rest);
@@ -153,6 +164,7 @@ async function startUiCli(rest: string[]): Promise<void> {
   }
   if (!Number.isFinite(port) || port < 0) throw new Error("invalid --port");
   const host = "127.0.0.1";
+  const { startUi, openBrowser } = await import("./ui-server.js");
   const server = await startUi({ cwd, port, host });
   const addr = server.address();
   const bound = typeof addr === "object" && addr ? addr.port : port;
@@ -229,7 +241,8 @@ function handleLogs(rest: string[]): void {
   process.stdout.write(fs.readFileSync(job.logFile, "utf8"));
 }
 
-function handleCompletion(rest: string[]): void {
+async function handleCompletion(rest: string[]): Promise<void> {
+  const { installCompletion, uninstallCompletion, scriptFor } = await import("./completion.js");
   const sub = rest[0] ?? "help";
   if (sub === "install") {
     console.log(installCompletion());
@@ -249,17 +262,19 @@ function handleCompletion(rest: string[]): void {
   gtimed completion bash|zsh|fish|powershell`);
 }
 
-function runComplete(argv: string[]): void {
+function runComplete(argv: string[], suggest: (words: string[], cword: number) => string[]): void {
   let cword = Number(argv[0]);
   const dash = argv.indexOf("--");
   const words = dash >= 0 ? argv.slice(dash + 1) : argv.slice(Number.isFinite(cword) ? 1 : 0);
   if (!Number.isFinite(cword) || cword < 0) cword = Math.max(0, words.length - 1);
-  for (const item of suggestions(words, cword)) {
+  for (const item of suggest(words, cword)) {
     console.log(item);
   }
 }
 
 async function runShim(argv: string[]): Promise<void> {
+  const { spawnSync } = await import("node:child_process");
+  const { argsHaveScheduleFlags, discoverRealGit } = await import("./shim.js");
   const rest = argv.slice(1);
   if (argsHaveScheduleFlags(rest)) {
     console.error("git does not accept --in / --at / --when / --cron.");

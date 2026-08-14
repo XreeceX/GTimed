@@ -18,7 +18,7 @@ const COMMANDS = [
   ...GIT_VERBS,
 ];
 
-const EXTRA_OPTIONS = ["--all", "-a", "--port", "--no-open"];
+const EXTRA_OPTIONS = new Set(["--all", "-a", "--port", "--no-open"]);
 const OPTIONS = [...Object.keys(FLAGS), "--help", "--version", "--log", "--tick"];
 
 export function distance(a: string, b: string): number {
@@ -89,7 +89,7 @@ function knownCommand(token: string): boolean {
 function knownOption(token: string): boolean {
   const name = token.split("=")[0] ?? token;
   if (FLAGS[canonicalFlag(name)]) return true;
-  if (EXTRA_OPTIONS.includes(name)) return true;
+  if (EXTRA_OPTIONS.has(name)) return true;
   return name === "--help" || name === "--version" || name === "--log" || name === "--tick";
 }
 

@@ -1,4 +1,14 @@
-import * as chrono from "chrono-node";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+type Chrono = typeof import("chrono-node");
+let chrono: Chrono | undefined;
+
+function parseNaturalDate(input: string, now: Date): Date | null {
+  chrono ??= require("chrono-node") as Chrono;
+  return chrono.parseDate(input, now, { forwardDate: true });
+}
 
 const DURATION = /^(\d*\.?\d+)\s*(ms|s|m|h|d|w|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks)$/i;
 
@@ -47,7 +57,7 @@ export function parseWhen(input: string, now = new Date()): Date {
     return new Date(iso);
   }
 
-  const parsed = chrono.parseDate(input, now, { forwardDate: true });
+  const parsed = parseNaturalDate(input, now);
   if (!parsed) {
     throw new Error(
       `Could not parse time "${input}". Try ISO (2026-08-14T09:00), "tomorrow 5pm", or a duration like 30m / 2h.`,

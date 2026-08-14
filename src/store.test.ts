@@ -63,6 +63,14 @@ test("jobs.json is written under GTIMED_HOME", () => {
   assert.equal(fs.existsSync(jobsPath()), true);
 });
 
+test("jobs.json is compact JSON", () => {
+  isolatedHome();
+  upsertJob(job({ id: "compact" }));
+  const text = fs.readFileSync(jobsPath(), "utf8");
+  assert.equal(text, JSON.stringify(JSON.parse(text)));
+  assert.doesNotMatch(text, /\n  /);
+});
+
 test("newJobId is 8 hex chars", () => {
   assert.match(newJobId(), /^[0-9a-f]{8}$/);
 });

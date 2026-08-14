@@ -4,7 +4,6 @@
   "description": "Schedule git (and any CLI) commands for a later time or when conditions match",
   "type": "module",
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "bin": {
     "gtimed": "./dist/index.js"
   },
@@ -16,11 +15,11 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/clean-dist.mjs && tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "node scripts/test.mjs",
-    "prepare": "tsc"
+    "prepare": "node scripts/clean-dist.mjs && tsc"
   },
   "engines": {
     "node": ">=18"

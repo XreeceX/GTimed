@@ -1,17 +1,30 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import fs from "node:fs";
-import { CronExpressionParser } from "cron-parser";
 import { evalAllConditions, repoMeta } from "./conditions.js";
 import {
-  cancelOtherPendingDuplicates,
   findPendingDuplicate,
   loadStore,
   logsDir,
   newJobId,
+  putJobCancellingDuplicates,
+  saveStore,
   type Job,
   upsertJob,
 } from "./store.js";
 import { minuteKey, parseDurationMs, parseWhen } from "./time.js";
+
+const require = createRequire(import.meta.url);
+
+type CronParser = typeof import("cron-parser");
+let cronParser: CronParser | undefined;
+
+function parseCron(expr: string, opts?: { currentDate: Date }) {
+  cronParser ??= require("cron-parser") as CronParser;
+  return opts
+    ? cronParser.CronExpressionParser.parse(expr, opts)
+    : cronParser.CronExpressionParser.parse(expr);
+}
 
 function logLine(job: Job, line: string): void {
   fs.appendFileSync(job.logFile, `[${new Date().toISOString()}] ${line}\n`, "utf8");
@@ -26,7 +39,7 @@ export function dueByTime(job: Job, now: Date): boolean {
       // second 0 (Task Scheduler's default) would skip the current minute.
       const minuteStart = new Date(now);
       minuteStart.setSeconds(0, 0);
-      const expr = CronExpressionParser.parse(job.cron, {
+      const expr = parseCron(job.cron, {
         currentDate: new Date(minuteStart.getTime() - 1),
       });
       return minuteKey(expr.next().toDate()) === key;
@@ -117,7 +130,7 @@ export async function executeJob(job: Job): Promise<Job> {
     }
   }
 
-  const cond = evalAllConditions(job);
+  const cond = job.when.length ? evalAllConditions(job) : { ok: true, detail: "no conditions" };
   if (!cond.ok) {
     job.status = "pending";
     job.lastError = cond.detail;
@@ -155,34 +168,46 @@ export async function executeJob(job: Job): Promise<Job> {
 
 export async function tick(now = new Date()): Promise<Job[]> {
   const ran: Job[] = [];
-  const jobs = loadStore().jobs.filter((j) => j.status === "pending");
+  const store = loadStore();
+  let dirty = false;
 
-  for (const job of jobs) {
-    job.lastCheckedAt = now.toISOString();
+  const persist = () => {
+    if (!dirty) return;
+    saveStore(store);
+    dirty = false;
+  };
+
+  for (const job of store.jobs) {
+    if (job.status !== "pending") continue;
 
     if (expired(job, now)) {
       job.status = "failed";
       job.lastError = "deadline passed before conditions were met";
+      job.lastCheckedAt = now.toISOString();
       logLine(job, job.lastError);
-      upsertJob(job);
+      dirty = true;
       continue;
     }
 
     if (!dueByTime(job, now)) {
-      upsertJob(job);
       continue;
     }
 
-    const cond = evalAllConditions(job);
-    if (!cond.ok) {
-      job.lastError = cond.detail;
-      upsertJob(job);
-      continue;
+    if (job.when.length) {
+      const cond = evalAllConditions(job);
+      if (!cond.ok) {
+        job.lastError = cond.detail;
+        job.lastCheckedAt = now.toISOString();
+        dirty = true;
+        continue;
+      }
     }
 
+    persist();
     ran.push(await executeJob(job));
   }
 
+  persist();
   return ran;
 }
 
@@ -250,7 +275,7 @@ export function buildJob(opts: {
     throw new Error("Provide --at, --in, --cron, --when, or --now.");
   }
   if (opts.cron) {
-    CronExpressionParser.parse(opts.cron);
+    parseCron(opts.cron);
   }
 
   const job: Job = {
@@ -282,11 +307,11 @@ export function buildJob(opts: {
 export function enqueueJob(
   opts: Omit<Parameters<typeof buildJob>[0], "id"> & { id?: string },
 ): { job: Job; replaced: boolean } {
-  const existing = findPendingDuplicate(opts.command, opts.cwd);
+  const store = loadStore();
+  const existing = findPendingDuplicate(opts.command, opts.cwd, store.jobs);
   const id = existing?.id ?? opts.id ?? newJobId();
-  cancelOtherPendingDuplicates(opts.command, opts.cwd, id);
   const job = buildJob({ ...opts, id });
-  upsertJob(job);
+  putJobCancellingDuplicates(job, store);
   const replaced = Boolean(existing);
   logLine(
     job,

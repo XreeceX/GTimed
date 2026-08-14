@@ -245,6 +245,26 @@ test("tick of a future job returns nothing due", async () => {
   assert.equal(loadStore().jobs[0]?.status, "pending");
 });
 
+test("tick of a future job does not rewrite jobs.json", async () => {
+  const home = isolatedHome();
+  const job = buildJob({
+    command: ["git", "push"],
+    cwd: process.cwd(),
+    at: "2099-01-01T00:00:00.000Z",
+    when: [],
+    dryRun: true,
+    now: false,
+    sameBranch: false,
+    id: "later",
+  });
+  upsertJob(job);
+  const file = path.join(home, "jobs.json");
+  const before = fs.readFileSync(file, "utf8");
+  await tick(new Date("2026-08-14T10:00:00.000Z"));
+  await tick(new Date("2026-08-14T10:01:00.000Z"));
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+});
+
 test("tick fails a job whose --until has passed", async () => {
   const home = isolatedHome();
   const job = stubJob({

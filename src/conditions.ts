@@ -39,9 +39,11 @@ export const WHEN_KEYWORDS = [
   "ro",
 ] as const;
 
+const WHEN_KEYWORD_SET = new Set<string>(WHEN_KEYWORDS);
+
 export function isWhenSpec(spec: string): boolean {
   const lower = spec.trim().toLowerCase();
-  if ((WHEN_KEYWORDS as readonly string[]).includes(lower)) return true;
+  if (WHEN_KEYWORD_SET.has(lower)) return true;
   return lower.startsWith("branch=") || lower.startsWith("file=") || lower.startsWith("cmd:");
 }
 
@@ -119,6 +121,14 @@ export function evalAllConditions(job: Job): ConditionResult {
 }
 
 export function repoMeta(cwd: string): { gitRoot?: string; branch?: string } {
+  const r = git(cwd, ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]);
+  if (r.status === 0) {
+    const lines = r.stdout.split(/\r?\n/);
+    return {
+      gitRoot: lines[0] || undefined,
+      branch: lines[1] || undefined,
+    };
+  }
   const root = git(cwd, ["rev-parse", "--show-toplevel"]);
   const branch = git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
   return {
