@@ -13,6 +13,26 @@ test("gtimed --i → --in", () => {
   assert.ok(out.includes("--in"));
 });
 
+test("gtm is the short name for gtimed", () => {
+  const out = suggestions(["gtm", "ca"], 1);
+  assert.ok(out.includes("cancel"));
+  assert.ok(!out.includes("commit"));
+});
+
+test("gtm.cmd and gtm.exe paths still complete", () => {
+  const cmd = suggestions(["C:\\\\npm\\\\gtm.cmd", "li"], 1);
+  const exe = suggestions(["/usr/bin/gtm.exe", "--i"], 1);
+  assert.ok(cmd.includes("list"));
+  assert.ok(exe.includes("--in"));
+});
+
+test("gtm --in suggests the same durations as gtimed", () => {
+  const a = suggestions(["gtimed", "--in", "2"], 2);
+  const b = suggestions(["gtm", "--in", "2"], 2);
+  assert.deepEqual(a, b);
+  assert.ok(b.includes("20m"));
+});
+
 test("gt (Graphite) is not completed by gtimed", () => {
   const out = suggestions(["gt", "ca"], 1);
   assert.deepEqual(out, []);
@@ -57,17 +77,17 @@ test("git itself is not completed by gtimed", () => {
   assert.deepEqual(out, []);
 });
 
-test("shell scripts complete gtimed only", () => {
+test("shell scripts complete gtimed and gtm, not git or gt", () => {
   const zsh = scriptFor("zsh");
   const bash = scriptFor("bash");
-  assert.match(zsh, /compdef _gtimed gtimed$/m);
+  assert.match(zsh, /compdef _gtimed gtimed gtm$/m);
   assert.doesNotMatch(zsh, /git-timed/);
   assert.doesNotMatch(zsh, /compdef _gtimed_git git/);
   assert.doesNotMatch(zsh, /\bgt\b/);
   assert.doesNotMatch(bash, /git-timed/);
   assert.doesNotMatch(bash, /complete .* git\b/);
   assert.doesNotMatch(bash, /\bgt\b/);
-  assert.match(bash, /complete -o default -F _gtimed gtimed/);
+  assert.match(bash, /complete -o default -F _gtimed gtimed gtm/);
 });
 
 test("gtimed ab → abort", () => {
@@ -131,9 +151,10 @@ test("fish and powershell scripts do not wrap git", () => {
   assert.doesNotMatch(fish, /git-timed/);
   assert.doesNotMatch(ps, /git-timed/);
   assert.match(fish, /complete -c gtimed/);
+  assert.match(fish, /complete -c gtm\b/);
   assert.doesNotMatch(fish, /complete -c gt\b/);
-  assert.match(ps, /CommandName gtimed\b/);
-  assert.doesNotMatch(ps, /CommandName gtimed,gt/);
+  assert.match(ps, /CommandName gtimed,gtm\b/);
+  assert.doesNotMatch(ps, /CommandName gtimed,gt,/);
 });
 
 test("unknown shell throws", () => {

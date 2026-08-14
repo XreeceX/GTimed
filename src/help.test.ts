@@ -23,6 +23,7 @@ test("full help looks like a Unix usage page", () => {
   assert.match(text, /Commands:/);
   assert.match(text, /Schedule options:/);
   assert.match(text, /gtimed commit --in/);
+  assert.match(text, /gtm push --at/);
   assert.match(text, /replaces the pending job/);
   assert.match(text, /gtimed --log/);
   assert.doesNotMatch(text, /\bgt push\b/);

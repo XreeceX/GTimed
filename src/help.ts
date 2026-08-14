@@ -21,14 +21,15 @@ export function helpFor(argv: string[]): string {
 export function help(): string {
   return `
 Usage: gtimed [options] <command>
+   or: gtm     [options] <command>
    or: gtimed [options] <git-verb | command...> --in <dur> | --at <when> | --cron <expr> | --when <spec> | --now
 
 Schedule git (or any CLI) for later, on a cron, or when a repo condition matches.
-git itself is unchanged. Delay flags live on gtimed only.
+git itself is unchanged. Delay flags live on gtimed only. gtm is the same CLI; gt is Graphite's.
 
 Examples:
   gtimed commit --in 20m -m "Hello world"
-  gtimed push --at "tomorrow 9am"
+  gtm push --at "tomorrow 9am"
   gtimed fetch --cron "0 */4 * * *"
   gtimed --when clean -- git push
   gtimed --in 30m -- gh pr create --fill

@@ -236,3 +236,31 @@ test("gtimed cancel --all aborts pending jobs", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /aborted 1 pending job/);
 });
+
+test("gtimed --help documents gtm and not Graphite's gt", () => {
+  const home = isolatedHome();
+  const r = runCli(home, ["--help"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /or: gtm/);
+  assert.match(r.stdout, /gtm is the same CLI/);
+  assert.match(r.stdout, /gtm push --at/);
+  assert.doesNotMatch(r.stdout, /\bgt push\b/);
+  assert.doesNotMatch(r.stdout, /or: gt /);
+});
+
+test("gtm __complete offers the same first-token hits as gtimed", () => {
+  const home = isolatedHome();
+  const timed = runCli(home, ["__complete", "1", "--", "gtimed", "ca"]);
+  const short = runCli(home, ["__complete", "1", "--", "gtm", "ca"]);
+  assert.equal(timed.status, 0, timed.stderr);
+  assert.equal(short.status, 0, short.stderr);
+  assert.equal(timed.stdout, short.stdout);
+  assert.match(short.stdout, /^cancel$/m);
+});
+
+test("gt __complete stays empty so Graphite is not hijacked", () => {
+  const home = isolatedHome();
+  const r = runCli(home, ["__complete", "1", "--", "gt", "ca"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), "");
+});

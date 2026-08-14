@@ -186,10 +186,11 @@ Need at least one of `--at`, `--in`, `--cron`, `--when`, or `--now`.
 
 ### Shortcuts
 
-These only apply to `gtimed` itself. The command name stays `gtimed` — we do not install `gt`, because [Graphite](https://graphite.com/docs/install-the-cli) already uses that. Short flags like `--in` / `--at` / `--now` stay as they are. Git's own flags (`-m`, `-a`, `-C`, ffmpeg's `-to`, …) are left alone.
+These only apply to `gtimed` / `gtm`. We do not install `gt`, because [Graphite](https://graphite.com/docs/install-the-cli) already uses that. Short flags like `--in` / `--at` / `--now` stay as they are. Git's own flags (`-m`, `-a`, `-C`, ffmpeg's `-to`, …) are left alone.
 
 | Long | Short |
 | --- | --- |
+| `gtimed` | `gtm` |
 | `list` | `ls` |
 | `tick` | `--tick` |
 | `daemon` | `dm` |
@@ -203,7 +204,7 @@ These only apply to `gtimed` itself. The command name stays `gtimed` — we do n
 
 ```bash
 gtimed push --in 20m --sb --to 2m --dry
-gtimed --tick
+gtm --tick
 ```
 
 If a wrapped tool also uses `--to` / `--dry` / `--rt`, put `--` in front of that command.

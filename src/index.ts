@@ -115,7 +115,7 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       console.log(installTick());
       console.log(installCompletion());
       console.log("Installed on this machine:");
-      console.log("  • gtimed on PATH (npm global)");
+      console.log("  • gtimed and gtm on PATH (npm global)");
       console.log("  • jobs fire every minute via Task Scheduler / cron (PC must be on)");
       console.log("Open a new terminal, then:");
       console.log('  gtimed commit --in 20m -m "Hello world"');

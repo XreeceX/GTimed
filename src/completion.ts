@@ -62,6 +62,8 @@ export interface SuggestOpts {
   jobs?: string[];
 }
 
+const COMPLETION_BINS = new Set(["gtimed", "gtm"]);
+
 export function suggestions(words: string[], cword: number, opts: SuggestOpts = {}): string[] {
   const current = words[cword] ?? "";
   const prev = cword > 0 ? (words[cword - 1] ?? "") : "";
@@ -75,7 +77,7 @@ export function suggestions(words: string[], cword: number, opts: SuggestOpts = 
 
   let pool: string[] = [];
 
-  if (bin !== "gtimed") {
+  if (!COMPLETION_BINS.has(bin)) {
     return [];
   }
 
@@ -148,7 +150,7 @@ _gtimed() {
   COMPREPLY=( $(compgen -W "$out" -- "$cur") )
 }
 
-complete -o default -F _gtimed gtimed
+complete -o default -F _gtimed gtimed gtm
 `;
 }
 
@@ -162,7 +164,7 @@ _gtimed() {
   compadd -a opts
 }
 
-compdef _gtimed gtimed
+compdef _gtimed gtimed gtm
 `;
 }
 
@@ -177,6 +179,7 @@ function __gtimed_complete
 end
 
 complete -c gtimed -f -a '(__gtimed_complete)'
+complete -c gtm -f -a '(__gtimed_complete)'
 `;
 }
 
@@ -198,7 +201,7 @@ $gtimedCompleter = {
   }
 }
 
-Register-ArgumentCompleter -Native -CommandName gtimed -ScriptBlock $gtimedCompleter
+Register-ArgumentCompleter -Native -CommandName gtimed,gtm -ScriptBlock $gtimedCompleter
 `;
 }
 
@@ -232,7 +235,7 @@ export function installCompletion(): string {
     notes.push(`Copied fish completions to ${fish}`);
   }
 
-  notes.push("Open a new terminal, then: gtimed ca<Tab>  →  cancel");
+  notes.push("Open a new terminal, then: gtimed ca<Tab>  or  gtm ca<Tab>  →  cancel");
   return notes.filter(Boolean).join("\n");
 }
 

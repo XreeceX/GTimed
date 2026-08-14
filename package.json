@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "gtimed": "./dist/index.js"
+    "gtimed": "./dist/index.js",
+    "gtm": "./dist/index.js"
   },
   "files": [
     "dist",

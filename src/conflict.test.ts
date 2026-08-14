@@ -13,9 +13,11 @@ const pkg = JSON.parse(
   fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
 ) as { name: string; bin: Record<string, string> };
 
-test("package bin is only gtimed, not Graphite's gt", () => {
+test("package bin is gtimed and gtm, not Graphite's gt", () => {
   assert.equal(pkg.name, "gtimed");
-  assert.deepEqual(Object.keys(pkg.bin), ["gtimed"]);
+  assert.deepEqual(Object.keys(pkg.bin), ["gtimed", "gtm"]);
+  assert.equal(pkg.bin.gtimed, pkg.bin.gtm);
+  assert.ok(!Object.keys(pkg.bin).includes("gt"));
 });
 
 test("git short flags are not treated as gtimed flags", () => {
@@ -47,17 +49,18 @@ test("wantsHelp does not steal --help after --", () => {
   assert.equal(wantsHelp(["--in", "1h", "--", "tool", "-h"]), false);
 });
 
-test("completion hooks do not claim gt, git, or gtm", () => {
+test("completion hooks claim gtimed and gtm, not gt or git", () => {
   for (const shell of ["bash", "zsh", "fish", "powershell"] as const) {
     const script = scriptFor(shell);
+    assert.match(script, /\bgtm\b/);
     assert.doesNotMatch(script, /complete -c gt\b/);
-    assert.doesNotMatch(script, /CommandName gtimed,gt/);
-    assert.doesNotMatch(script, /compdef _gtimed gtimed gt/);
-    assert.doesNotMatch(script, /\bgtm\b/);
+    assert.doesNotMatch(script, /CommandName gtimed,gt,/);
+    assert.doesNotMatch(script, /compdef _gtimed gtimed gt$/m);
+    assert.doesNotMatch(script, /complete .* git\b/);
   }
   assert.deepEqual(suggestions(["gt", "abort"], 1), []);
   assert.deepEqual(suggestions(["git", "commit", "--in"], 2), []);
-  assert.deepEqual(suggestions(["gtm", "ca"], 1), []);
+  assert.ok(suggestions(["gtm", "ca"], 1).includes("cancel"));
 });
 
 test("gtimed commit -m is still git's message flag", () => {
