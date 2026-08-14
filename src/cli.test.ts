@@ -37,6 +37,8 @@ test("gtimed push --in 20m schedules git push", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /scheduled [0-9a-f]{8}/);
   assert.match(r.stdout, /git push/);
+  assert.match(r.stdout, /not run yet/);
+  assert.doesNotMatch(r.stdout, /run a tick with/);
 });
 
 test("gtimed tick on a future job says nothing due and still waiting", () => {
@@ -44,8 +46,8 @@ test("gtimed tick on a future job says nothing due and still waiting", () => {
   runCli(home, ["push", "--in", "20m"]);
   const r = runCli(home, ["tick"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /nothing due/);
-  assert.match(r.stdout, /still waiting/);
+  assert.match(r.stdout, /nothing due to run/);
+  assert.match(r.stdout, /still waiting:/);
 });
 
 test("reschedule prints updated and keeps one job", () => {
@@ -97,11 +99,11 @@ test("gtimed --log prints the latest job log", () => {
   const home = isolatedHome();
   const ran = runCli(home, ["status", "--now", "--dry-run"]);
   assert.equal(ran.status, 0, ran.stderr);
-  const id = /ran ([0-9a-f]{8})/.exec(ran.stdout)?.[1];
+  const id = /([0-9a-f]{8}) -> done/.exec(ran.stdout)?.[1];
   assert.ok(id);
   const log = runCli(home, ["--log"]);
   assert.equal(log.status, 0, log.stderr);
-  assert.match(log.stdout, new RegExp(`# ${id}`));
+  assert.match(log.stdout, new RegExp(`^${id} `, "m"));
   assert.match(log.stdout, /dry-run: would execute git status/);
 });
 
@@ -122,15 +124,42 @@ test("gtimed --log=<id> prints that job", () => {
   assert.ok(id);
   const log = runCli(home, [`--log=${id}`]);
   assert.equal(log.status, 0, log.stderr);
-  assert.match(log.stdout, new RegExp(`# ${id}`));
-  assert.match(log.stdout, /\(no log yet\)/);
+  assert.match(log.stdout, new RegExp(`^${id} `, "m"));
+  assert.match(log.stdout, /scheduled/);
+  assert.doesNotMatch(log.stdout, /no log yet/);
 });
 
 test("gtimed --now --dry-run runs immediately", () => {
   const home = isolatedHome();
   const r = runCli(home, ["status", "--now", "--dry-run"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /ran [0-9a-f]{8} -> done/);
+  assert.match(r.stdout, /[0-9a-f]{8} -> done/);
+});
+
+test("gtimed list marks pending jobs as waiting", () => {
+  const home = isolatedHome();
+  runCli(home, ["push", "--in", "20m"]);
+  const r = runCli(home, ["list"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /pending\s+waiting /);
+  assert.doesNotMatch(r.stdout, /pending\s+ran /);
+});
+
+test("gtimed cancel with no id does not look like it cancelled", () => {
+  const home = isolatedHome();
+  runCli(home, ["push", "--in", "20m"]);
+  const r = runCli(home, ["cancel"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /nothing cancelled/);
+  assert.doesNotMatch(r.stdout, /^cancelled /m);
+});
+
+test("gtimed --now does not say ran when --when fails", () => {
+  const home = isolatedHome();
+  const r = runCli(home, ["status", "--now", "--when", 'cmd:node -e "process.exit(2)"']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /did not run/);
+  assert.doesNotMatch(r.stdout, / ran /);
 });
 
 test("git-style flags after -- are not stolen from gh", () => {

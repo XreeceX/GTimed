@@ -48,10 +48,14 @@ async function loadRepo() {
 }
 
 function jobWhen(job) {
-  if (job.cron) return `cron ${job.cron}`;
-  if (job.at) return job.at.replace("T", " ").slice(0, 19);
-  if (job.when?.length) return `when ${job.when.join(", ")}`;
-  return "—";
+  if (job.status === "pending") {
+    if (job.cron) return `waiting cron ${job.cron}`;
+    if (job.at) return `waiting ${job.at.replace("T", " ").slice(0, 19)}`;
+    if (job.when?.length) return `waiting when ${job.when.join(", ")}`;
+    return "waiting";
+  }
+  if (job.lastRunAt) return `${job.status} ${job.lastRunAt.replace("T", " ").slice(0, 19)}`;
+  return job.status;
 }
 
 async function loadJobs() {

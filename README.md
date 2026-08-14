@@ -90,12 +90,15 @@ gtimed commit --in 10m -m "b" # different -m → second job
 `gtimed tick` **runs jobs whose time has already arrived**. It does not run future jobs.
 
 ```text
-nothing due
-31bc95ae  still waiting  2026-08-14T10:45:30.827Z
+nothing due to run
+still waiting:
+  31bc95ae  git push  waiting 2026-08-14T10:45:30.827Z
 ```
 
-- **`nothing due`** — nothing is ready **right now**.
-- **`still waiting`** — there is a pending job; the timestamp is when it will fire (UTC).
+- **`nothing due to run`** — nothing is ready **right now**.
+- **`still waiting`** — pending jobs and when they will fire (UTC).
+
+`gtimed list` uses the same wording (`waiting …` vs `ran …`) so a pending job never looks like it already ran.
 
 You do not need to run `tick` by hand after `gtimed install`. Task Scheduler does it every minute. `gtimed list` shows the same queue without trying to run anything.
 
@@ -199,7 +202,7 @@ Statuses: `pending` → `running` → `done` | `failed` | `cancelled` | `skipped
 
 Cron jobs that succeed go back to `pending`. One-shot jobs become `done`. Failed `--when` before `--until` leave the job `pending` for the next tick.
 
-IDs are 8 hex chars. `gtimed logs abc` and `gtimed --log abc` work if that prefix is unique. `gtimed --log` (no id) prints the latest job. Rescheduling prints `updated <id>` instead of `scheduled <id>`.
+IDs are 8 hex chars. `gtimed logs abc` and `gtimed --log abc` work if that prefix is unique. `gtimed --log` (no id) prints the latest job. If it has not run, you get the job line plus `has not run yet`. Rescheduling prints `updated <id>` instead of `scheduled <id>`.
 
 ---
 

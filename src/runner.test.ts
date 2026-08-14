@@ -3,7 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildJob, dueByTime, enqueueJob, executeJob, nextHint, quoteWinCmdArg, tick } from "./runner.js";
+import { buildJob, dueByTime, enqueueJob, executeJob, nextHint, quoteWinCmdArg, statusHint, tick } from "./runner.js";
 import type { Job } from "./store.js";
 import { loadStore, upsertJob } from "./store.js";
 import { minuteKey } from "./time.js";
@@ -329,6 +329,13 @@ test("nextHint prefers cron then at then when", () => {
   assert.equal(nextHint(stubJob({ at: "2026-08-14T10:45:00.000Z" })), "2026-08-14T10:45:00.000Z");
   assert.equal(nextHint(stubJob({ when: ["clean", "ahead"] })), "when clean & ahead");
   assert.equal(nextHint(stubJob({})), "soon");
+});
+
+test("statusHint does not make a pending job look finished", () => {
+  assert.match(statusHint(stubJob({ status: "pending", at: "2026-08-14T10:45:00.000Z" })), /^waiting /);
+  assert.match(statusHint(stubJob({ status: "done", lastRunAt: "2026-08-14T10:45:00.000Z" })), /^ran /);
+  assert.equal(statusHint(stubJob({ status: "cancelled" })), "cancelled");
+  assert.match(statusHint(stubJob({ status: "failed", lastError: "exit 1" })), /failed exit 1/);
 });
 
 test("quoteWinCmdArg quotes shell metacharacters", () => {

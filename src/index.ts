@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { installCompletion, scriptFor, suggestions, uninstallCompletion } from "./completion.js";
 import { installTick, uninstallTick } from "./install.js";
 import { GIT_VERBS, MANAGEMENT, parseScheduleArgs, quote } from "./parse.js";
-import { enqueueJob, executeJob, nextHint, tick } from "./runner.js";
+import { enqueueJob, executeJob, nextHint, statusHint, tick } from "./runner.js";
 import {
   argsHaveScheduleFlags,
   discoverRealGit,
@@ -13,7 +13,7 @@ import {
   removeShim,
   removeShimFromUserPath,
 } from "./shim.js";
-import { cancelPending, getJob, latestJob, loadStore, pendingJobs, shimDir } from "./store.js";
+import { cancelPending, getJob, latestJob, loadStore, pendingJobs, shimDir, type Job } from "./store.js";
 import { openBrowser, startUi } from "./ui-server.js";
 
 const VERSION = "0.1.0";
@@ -107,18 +107,11 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
     case "run": {
       const id = rest[0];
       if (!id) throw new Error("usage: gtimed run <id>");
-      const job = await executeJob(requireJob(id));
-      console.log(`${job.id} -> ${job.status}${job.lastError ? ` (${job.lastError})` : ""}`);
+      printJobOutcome(await executeJob(requireJob(id)));
       return;
     }
     case "tick": {
-      const ran = await tick();
-      if (!ran.length) console.log("nothing due");
-      else ran.forEach((j) => console.log(`${j.id} -> ${j.status}`));
-      const waiting = loadStore().jobs.filter((j) => j.status === "pending");
-      for (const j of waiting) {
-        console.log(`${j.id}  still waiting  ${nextHint(j)}`);
-      }
+      printTick(await tick());
       return;
     }
     case "daemon": {
@@ -220,7 +213,7 @@ function handleCancel(cmd: string, rest: string[]): void {
       console.log("no pending jobs");
       return;
     }
-    console.log("pending jobs:");
+    console.log("nothing cancelled — pick a job:");
     for (const j of pending) {
       console.log(`  ${j.id}  ${nextHint(j)}  ${j.command.join(" ")}`);
     }
@@ -245,9 +238,14 @@ function handleLogs(rest: string[]): void {
     console.log("no jobs");
     return;
   }
-  console.log(`# ${job.id}  ${job.status}  ${quote(job.command)}`);
-  if (!fs.existsSync(job.logFile)) {
-    console.log("(no log yet)");
+  console.log(`${job.id}  ${statusHint(job)}  ${quote(job.command)}`);
+  const hasLog = fs.existsSync(job.logFile) && fs.statSync(job.logFile).size > 0;
+  if (!hasLog) {
+    if (job.status === "pending") {
+      console.log(`has not run yet  (waiting ${nextHint(job)})`);
+    } else {
+      console.log("(no log yet)");
+    }
     return;
   }
   process.stdout.write(fs.readFileSync(job.logFile, "utf8"));
@@ -308,16 +306,41 @@ async function schedule(argv: string[]): Promise<void> {
   });
 
   if (parsed.now) {
-    const ran = await executeJob(job);
-    console.log(`ran ${ran.id} -> ${ran.status}`);
+    printJobOutcome(await executeJob(job));
     return;
   }
 
   console.log(`${replaced ? "updated" : "scheduled"} ${job.id}`);
   console.log(`  cmd   ${quote(job.command)}`);
   console.log(`  cwd   ${job.cwd}`);
-  console.log(`  when  ${nextHint(job)}${job.when.length ? ` if ${job.when.join(" & ")}` : ""}`);
-  console.log("  run a tick with: gtimed tick   (or: gtimed install / gtimed daemon)");
+  console.log(`  not run yet — waiting ${nextHint(job)}${job.when.length ? ` if ${job.when.join(" & ")}` : ""}`);
+}
+
+function printJobOutcome(job: Job): void {
+  if (job.status === "pending") {
+    console.log(`${job.id}  did not run  ${job.lastError ?? statusHint(job)}`);
+    return;
+  }
+  if (job.status === "skipped") {
+    console.log(`${job.id}  skipped  ${job.lastError ?? ""}`.trim());
+    return;
+  }
+  console.log(`${job.id} -> ${job.status}${job.lastError ? ` (${job.lastError})` : ""}`);
+}
+
+function printTick(ran: Job[]): void {
+  if (ran.length) {
+    console.log(`ran ${ran.length} job(s):`);
+    for (const j of ran) printJobOutcome(j);
+  } else {
+    console.log("nothing due to run");
+  }
+  const waiting = loadStore().jobs.filter((j) => j.status === "pending");
+  if (!waiting.length) return;
+  console.log("still waiting:");
+  for (const j of waiting) {
+    console.log(`  ${j.id}  ${quote(j.command)}  ${statusHint(j)}`);
+  }
 }
 
 function printList(): void {
@@ -328,9 +351,7 @@ function printList(): void {
   }
   for (const j of jobs) {
     const name = j.name ? ` ${j.name}` : "";
-    console.log(
-      `${j.id}${name}  ${j.status.padEnd(10)}  ${nextHint(j)}  ${quote(j.command)}`,
-    );
+    console.log(`${j.id}${name}  ${j.status.padEnd(10)}  ${statusHint(j)}  ${quote(j.command)}`);
   }
 }
 

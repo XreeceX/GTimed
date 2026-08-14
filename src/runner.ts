@@ -193,6 +193,26 @@ export function nextHint(job: Job): string {
   return "soon";
 }
 
+/** One-line status for list / logs — never looks like the job already ran if it is still pending. */
+export function statusHint(job: Job): string {
+  switch (job.status) {
+    case "pending":
+      return `waiting ${nextHint(job)}`;
+    case "done":
+      return job.lastRunAt ? `ran ${job.lastRunAt}` : "done";
+    case "failed":
+      return job.lastError ? `failed ${job.lastError}` : "failed";
+    case "cancelled":
+      return "cancelled";
+    case "skipped":
+      return job.lastError ? `skipped ${job.lastError}` : "skipped";
+    case "running":
+      return "running";
+    default:
+      return nextHint(job);
+  }
+}
+
 export function buildJob(opts: {
   command: string[];
   cwd: string;
@@ -267,5 +287,10 @@ export function enqueueJob(
   cancelOtherPendingDuplicates(opts.command, opts.cwd, id);
   const job = buildJob({ ...opts, id });
   upsertJob(job);
-  return { job, replaced: Boolean(existing) };
+  const replaced = Boolean(existing);
+  logLine(
+    job,
+    `${replaced ? "updated" : "scheduled"}  ${nextHint(job)}${job.when.length ? ` if ${job.when.join(" & ")}` : ""}`,
+  );
+  return { job, replaced };
 }
