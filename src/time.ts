@@ -1,6 +1,6 @@
 import * as chrono from "chrono-node";
 
-const DURATION = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks)$/i;
+const DURATION = /^(\d*\.?\d+)\s*(ms|s|m|h|d|w|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks)$/i;
 
 const UNIT_MS: Record<string, number> = {
   ms: 1,

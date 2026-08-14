@@ -3,7 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildJob, dueByTime, enqueueJob, executeJob, quoteWinCmdArg, tick } from "./runner.js";
+import { buildJob, dueByTime, enqueueJob, executeJob, nextHint, quoteWinCmdArg, tick } from "./runner.js";
 import type { Job } from "./store.js";
 import { loadStore, upsertJob } from "./store.js";
 import { minuteKey } from "./time.js";
@@ -225,4 +225,135 @@ test("a different command or cwd keeps a separate job", () => {
   });
   assert.equal(pushOther.replaced, false);
   assert.notEqual(pushOther.job.id, push.job.id);
+});
+
+test("tick of a future job returns nothing due", async () => {
+  isolatedHome();
+  const job = buildJob({
+    command: ["git", "push"],
+    cwd: process.cwd(),
+    at: "2099-01-01T00:00:00.000Z",
+    when: [],
+    dryRun: true,
+    now: false,
+    sameBranch: false,
+    id: "later",
+  });
+  upsertJob(job);
+  const ran = await tick(new Date("2026-08-14T10:00:00.000Z"));
+  assert.equal(ran.length, 0);
+  assert.equal(loadStore().jobs[0]?.status, "pending");
+});
+
+test("tick fails a job whose --until has passed", async () => {
+  const home = isolatedHome();
+  const job = stubJob({
+    id: "late",
+    until: "2026-08-14T10:00:00.000Z",
+    at: "2026-08-14T12:00:00.000Z",
+    logFile: path.join(home, "late.log"),
+  });
+  upsertJob(job);
+  const ran = await tick(new Date("2026-08-14T11:00:00.000Z"));
+  assert.equal(ran.length, 0);
+  assert.equal(loadStore().jobs[0]?.status, "failed");
+  assert.match(loadStore().jobs[0]?.lastError ?? "", /deadline/);
+});
+
+test("tick leaves pending when --when fails", async () => {
+  const home = isolatedHome();
+  const job = stubJob({
+    id: "whenfail",
+    at: "2026-08-14T10:00:00.000Z",
+    when: ['cmd:node -e "process.exit(2)"'],
+    logFile: path.join(home, "when.log"),
+  });
+  upsertJob(job);
+  const ran = await tick(new Date("2026-08-14T11:00:00.000Z"));
+  assert.equal(ran.length, 0);
+  assert.equal(loadStore().jobs[0]?.status, "pending");
+});
+
+test("executeJob dry-run succeeds without spawning", async () => {
+  isolatedHome();
+  const job = buildJob({
+    command: ["definitely-not-a-gtimed-binary-xyz"],
+    cwd: os.tmpdir(),
+    when: [],
+    dryRun: true,
+    now: true,
+    sameBranch: false,
+    id: "dry",
+  });
+  const ran = await executeJob(job);
+  assert.equal(ran.status, "done");
+});
+
+test("buildJob requires a schedule", () => {
+  isolatedHome();
+  assert.throws(
+    () =>
+      buildJob({
+        command: ["git", "push"],
+        cwd: process.cwd(),
+        when: [],
+        dryRun: false,
+        now: false,
+        sameBranch: false,
+        id: "nosched",
+      }),
+    /Provide --at, --in, --cron, --when, or --now/,
+  );
+});
+
+test("buildJob rejects invalid cron", () => {
+  isolatedHome();
+  assert.throws(
+    () =>
+      buildJob({
+        command: ["git", "fetch"],
+        cwd: process.cwd(),
+        cron: "not-a-cron",
+        when: [],
+        dryRun: true,
+        now: false,
+        sameBranch: false,
+        id: "badcron",
+      }),
+    /Error/,
+  );
+});
+
+test("nextHint prefers cron then at then when", () => {
+  assert.equal(nextHint(stubJob({ cron: "0 9 * * *" })), "cron 0 9 * * *");
+  assert.equal(nextHint(stubJob({ at: "2026-08-14T10:45:00.000Z" })), "2026-08-14T10:45:00.000Z");
+  assert.equal(nextHint(stubJob({ when: ["clean", "ahead"] })), "when clean & ahead");
+  assert.equal(nextHint(stubJob({})), "soon");
+});
+
+test("quoteWinCmdArg quotes shell metacharacters", () => {
+  assert.equal(quoteWinCmdArg("a&b"), '"a&b"');
+  assert.equal(quoteWinCmdArg("100%"), '"100%%"');
+});
+
+test("when-only job is due by time", () => {
+  const job = stubJob({ when: ["clean"] });
+  assert.equal(dueByTime(job, new Date()), true);
+});
+
+test("one-shot failure with retry stays pending", async () => {
+  isolatedHome();
+  const job = buildJob({
+    command: [process.execPath, "-e", "process.exit(2)"],
+    cwd: os.tmpdir(),
+    when: [],
+    dryRun: false,
+    now: true,
+    sameBranch: false,
+    retry: "1",
+    id: "retry1",
+  });
+  const ran = await executeJob(job);
+  assert.equal(ran.status, "pending");
+  assert.match(ran.lastError ?? "", /will retry/);
 });

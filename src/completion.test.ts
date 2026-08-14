@@ -49,3 +49,56 @@ test("shell scripts complete gtimed only", () => {
   assert.doesNotMatch(bash, /git-timed/);
   assert.doesNotMatch(bash, /complete .* git\b/);
 });
+
+test("gtimed ab → abort", () => {
+  const out = suggestions(["gtimed", "ab"], 1);
+  assert.ok(out.includes("abort"));
+});
+
+test("gtimed li → list", () => {
+  const out = suggestions(["gtimed", "li"], 1);
+  assert.ok(out.includes("list"));
+});
+
+test("gtimed completion b → bash", () => {
+  const out = suggestions(["gtimed", "completion", "b"], 2);
+  assert.ok(out.includes("bash"));
+});
+
+test("gtimed --retry suggests numbers", () => {
+  const out = suggestions(["gtimed", "--retry", ""], 2);
+  assert.deepEqual(out, ["0", "1", "2", "3"]);
+});
+
+test("gtimed --cron suggests expressions", () => {
+  const out = suggestions(["gtimed", "--cron", "0"], 2);
+  assert.ok(out.some((s) => s.startsWith("0")));
+});
+
+test("gtimed --at has no canned values", () => {
+  const out = suggestions(["gtimed", "--at", "tom"], 2);
+  assert.deepEqual(out, []);
+});
+
+test("gtimed logs matches job ids from opts", () => {
+  const out = suggestions(["gtimed", "logs", "ff"], 2, { jobs: ["ff00aa", "abc"] });
+  assert.deepEqual(out, ["ff00aa"]);
+});
+
+test("root commands do not include shim", () => {
+  const out = suggestions(["gtimed", "sh"], 1);
+  assert.ok(!out.includes("shim"));
+});
+
+test("fish and powershell scripts do not wrap git", () => {
+  const fish = scriptFor("fish");
+  const ps = scriptFor("powershell");
+  assert.doesNotMatch(fish, /git-timed/);
+  assert.doesNotMatch(ps, /git-timed/);
+  assert.match(fish, /complete -c gtimed/);
+  assert.match(ps, /CommandName gtimed/);
+});
+
+test("unknown shell throws", () => {
+  assert.throws(() => scriptFor("tcsh"), /unknown shell/);
+});

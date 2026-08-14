@@ -1,60 +1,22 @@
 # GTimed
 
-**Schedule git (and any other CLI) for later, on a cron, or when a condition matches.**
+Schedule **git** (or any other CLI) for later, on a cron, or when a repo condition matches.
 
-GitHub and `git.exe` have no `--in` / `--at`. GTimed is a separate command that wraps git (or `gh`, or any CLI) and runs it later:
+GitHub and `git` have no delay flags. GTimed is a separate command:
 
 ```bash
 gtimed commit --in 20m -m "Hello world"
 gtimed push --at "tomorrow 9am"
-gtimed fetch --cron "0 */4 * * *"
 gtimed --when clean -- git push
 ```
 
-`git` itself is unchanged. Schedule flags live on `gtimed` only.
+`git` itself is unchanged. `--in`, `--at`, `--when`, and `--cron` work on **`gtimed` only**.
 
 ---
 
-## Why this exists
+## Install (once)
 
-| Layer | Can it delay `git push`? |
-| --- | --- |
-| GitHub.com | No. Actions cron runs **CI on GitHub**, not your working tree. |
-| `git` | No. Extra flags error out. |
-| OS `at` / cron / Task Scheduler | Yes, but you retype the full command and cwd every time. |
-| GTimed | Yes: `gtimed push --in 20m`, job list, logs, conditions. |
-
-Related tools on GitHub ([Git-Schedule](https://github.com/mafex11/Git-Schedule), [GitLater](https://github.com/prakratt/GitLater), [grony](https://github.com/luismedel/grony)) mostly special-case **commit** or **push**. GTimed wraps **any** command and can wait on repo conditions.
-
----
-
-## Requirements
-
-- Node.js 18+
-- `git` on PATH (for git verbs and `--when` checks)
-- Windows, macOS, or Linux
-
-Jobs only run if something calls `gtimed tick` (a daemon, or an OS minute timer). The machine must be **awake**. Sleeping laptops do not fire jobs until the next tick after wake.
-
----
-
-## Install
-
-```bash
-cd GTimed
-npm install
-npm run build
-npm link
-gtimed install
-```
-
-(`npm install` also runs `prepare` → `tsc`, so `npm run build` is optional after a clean install.)
-
-`gtimed install` is a **one-time machine setup**, like installing a global npm package. After that it keeps working when Cursor is closed or reopened:
-
-1. Puts **`gtimed`** on your user PATH (npm global bin).
-2. Registers **Windows Task Scheduler** (or crontab) to run `tick` **every minute** and **at logon**, so due jobs fire without Cursor, `daemon`, or a terminal. The PC must be on and not asleep.
-3. Installs **tab completion** for `gtimed`.
+Needs Node.js 18+ and `git` on PATH.
 
 ```bash
 cd GTimed
@@ -64,64 +26,98 @@ npm install -g .
 gtimed install
 ```
 
-Then in a **new** terminal:
+(`npm link` works instead of `npm install -g .`.) Open a **new** terminal, then `gtimed` should be on PATH.
 
-```bash
-gtimed commit --in 20m -m "Hello world"
-```
+`gtimed install` is machine setup. After that, jobs keep firing when Cursor is closed:
 
-Uninstall: `gtimed uninstall` (removes the OS timer and completion hooks). Unlink the npm bin with `npm unlink -g gtimed`.
+1. Puts `gtimed` on your user PATH (npm global bin).
+2. Registers **Windows Task Scheduler** (or crontab) to run a tick **every minute** and **at logon**. The PC must be **on and awake**.
+3. Installs **tab completion** for `gtimed`.
+
+Uninstall: `gtimed uninstall`, then `npm unlink -g gtimed`.
 
 ---
 
-## Quick start
+## Everyday use
 
 ```bash
-gtimed push --in 20m
-gtimed commit --at "tomorrow 9am" -m "release notes"
-gtimed fetch --at "2026-08-14T09:00"
-gtimed fetch --all --cron "0 */4 * * *"
+gtimed commit --in 20m -m "fix login"
+gtimed push --in 10m
+gtimed push --at "tomorrow 9am"
+gtimed fetch --cron "0 */4 * * *"
 gtimed --when clean -- git push
-gtimed --at "Fri 17:00" --when ahead --same-branch -- git push origin main
 gtimed --in 30m -- gh pr create --fill
-gtimed status --now --dry-run
 ```
 
 Then:
 
 ```bash
-gtimed list
-gtimed logs <id>
-gtimed cancel <id>
+gtimed list              # queue
+gtimed logs <id>         # output of a job
+gtimed cancel <id>       # abort one (id prefix is enough)
+gtimed cancel last
+gtimed abort             # abort every pending job
 ```
+
+### Durations and times
+
+| What you type | Meaning |
+| --- | --- |
+| `--in 30s` | 30 seconds |
+| `--in 0.1m` or `--in .1m` | 6 seconds |
+| `--in 5m` / `--in 2h` / `--in 1d` | 5 minutes / 2 hours / 1 day |
+| `--at "tomorrow 9am"` | chrono phrase (local time) |
+| `--at 2026-08-14T09:00` | ISO time |
+
+Also: `min`, `minutes`, `hours`, `days`, `weeks`.
+
+### Same command overwrites
+
+If a **pending** job already exists for the **same command in the same folder**, a new schedule **replaces** it (same id, new time). A different commit message, remote, or directory is a new job.
+
+```bash
+gtimed push --in 20m
+gtimed push --in 5m           # updated <id> — fires in 5m, not 20m
+gtimed commit --in 1h -m "a"
+gtimed commit --in 10m -m "b" # different -m → second job
+```
+
+---
+
+## `tick` vs the queue
+
+`gtimed tick` **runs jobs whose time has already arrived**. It does not run future jobs.
+
+```text
+nothing due
+31bc95ae  still waiting  2026-08-14T10:45:30.827Z
+```
+
+- **`nothing due`** — nothing is ready **right now**.
+- **`still waiting`** — there is a pending job; the timestamp is when it will fire (UTC).
+
+You do not need to run `tick` by hand after `gtimed install`. Task Scheduler does it every minute. `gtimed list` shows the same queue without trying to run anything.
+
+`gtimed run <id>` fires that job now (still checks `--when`).
 
 ---
 
 ## How commands are parsed
 
-1. **Management words** (`list`, `cancel`, `tick`, …) are GTimed’s own commands.
+1. Management words (`list`, `cancel`, `tick`, …) are GTimed’s own commands.
 2. Anything else is a **job** to schedule.
-3. Known **git verbs** (`commit`, `push`, `fetch`, `add`, `pull`, `status`, …) get `git` prepended.
-4. Schedule flags (`--at`, `--in`, `--when`, …) are stripped wherever they appear.
+3. Known git verbs (`commit`, `push`, `fetch`, `add`, `pull`, `status`, …) get `git` prepended.
+4. Schedule flags are stripped wherever they appear.
 5. `--` means “the rest is the command, stop parsing our flags.”
 
 ```bash
-gtimed commit -m "x" --in 1h     # → git commit -m x    at now+1h
+gtimed commit -m "x" --in 1h      # → git commit -m x    at now+1h
 gtimed git push origin main --in 1h
 gtimed --in 1h -- git push origin main
 gtimed --in 1h -- gh pr create --fill
 ```
 
-`--` is the safe form when the wrapped tool also uses `--at` / `--in` / `--when`.
-
-If a **pending** job already exists for the same command in the same directory, the new `--in` / `--at` / `--cron` / `--when` **replaces** that job (same id). A different message, remote, or cwd is a new job.
-
-```bash
-gtimed push --in 20m
-gtimed push --in 5m          # updates the existing git push job to 5m
-gtimed commit --in 1h -m "a"
-gtimed commit --in 10m -m "b"  # different -m → second job
-```
+Use `--` when the wrapped tool also has `--in` / `--at` / `--when`.
 
 ---
 
@@ -145,15 +141,13 @@ At least one of `--at`, `--in`, `--cron`, `--when`, or `--now` is required.
 | `--retry` | `--retry 3` | Extra attempts after a non-zero exit |
 | `--every` | `--every 15s` | Stored on the job; tick cadence is still daemon (15s) or `install` (1 min) |
 
-Durations: `30s`, `5m`, `2h`, `1d`, `1w` (also `min`, `hours`, `days`, …). `--at` also accepts ISO (`2026-08-14T09:00`) and phrases via [chrono-node](https://github.com/wanasit/chrono) (`tomorrow 9am`, `Friday 17:00`).
-
-Cron uses [cron-parser](https://github.com/harrisiirak/cron-parser) (5-field crontab is fine: `minute hour day-of-month month day-of-week`).
+`--at` uses [chrono-node](https://github.com/wanasit/chrono). Cron uses [cron-parser](https://github.com/harrisiirak/cron-parser) (5-field: `minute hour day-of-month month day-of-week`).
 
 ---
 
 ## Conditions (`--when`)
 
-Repeatable; **every** spec must pass. Checked in the job’s `cwd` at tick time, not at schedule time.
+Repeatable; **every** spec must pass. Checked in the job’s `cwd` at **fire** time, not when you type the command.
 
 | Spec | Passes when |
 | --- | --- |
@@ -167,8 +161,6 @@ Repeatable; **every** spec must pass. Checked in the job’s `cwd` at tick time,
 | `file=src/app.ts` | that path is dirty in `git status` |
 | `cmd:<shell>` | shell command exits `0` |
 
-Examples:
-
 ```bash
 gtimed --when clean --when ahead -- git push
 gtimed --when branch=main --when remote-ok -- git push
@@ -177,7 +169,7 @@ gtimed --when "cmd:npm test" -- git push
 gtimed --when dirty --until "tomorrow 6pm" -- git add -A
 ```
 
-`ahead` / `behind` use the **local** tracking ref. They do not `git fetch` on every tick (that would be noisy). Combine with `--when remote-ok` or `cmd:git fetch` if you need a fresh remote view.
+`ahead` / `behind` use the **local** tracking ref. They do not `git fetch` on every tick. Combine with `--when remote-ok` or `cmd:git fetch` if you need a fresh remote view.
 
 ---
 
@@ -192,24 +184,25 @@ gtimed abort                # same as cancel --all
 gtimed logs <id>
 gtimed run <id>             # fire now; still checks --when and --same-branch
 gtimed tick                 # run every due pending job, then exit
-gtimed daemon
+gtimed daemon               # tick every 15s in this terminal
 gtimed install / uninstall
-gtimed completion install     # tab completion (also part of gtimed install)
+gtimed completion install
+gtimed ui
 gtimed help
 gtimed version
 ```
 
 Statuses: `pending` → `running` → `done` | `failed` | `cancelled` | `skipped`.
 
-Cron jobs that succeed go back to `pending`. One-shot jobs become `done`. Failed conditions before `--until` leave the job `pending` for the next tick.
+Cron jobs that succeed go back to `pending`. One-shot jobs become `done`. Failed `--when` before `--until` leave the job `pending` for the next tick.
 
-IDs are short (8 hex chars). `gtimed logs abc` works if that prefix is unique. Rescheduling prints `updated <id>` instead of `scheduled <id>`.
+IDs are 8 hex chars. `gtimed logs abc` works if that prefix is unique. Rescheduling prints `updated <id>` instead of `scheduled <id>`.
 
 ---
 
 ## Tab completion
 
-`gtimed install` (or `gtimed completion install`) hooks your shell so Tab fills in commands, flags, `--when` values, durations, and job ids.
+`gtimed install` (or `gtimed completion install`) hooks your shell.
 
 ```bash
 gtimed ca<Tab>              # cancel
@@ -226,47 +219,24 @@ gtimed cancel <Tab>         # job ids
 | zsh | `~/.zshrc` if that file exists |
 | fish | `~/.config/fish/completions/gtimed.fish` |
 
-Open a **new** terminal after install. Print a script without installing: `gtimed completion powershell`. Remove hooks: `gtimed completion uninstall`.
-
-Completion is for `gtimed` only, so it does not replace posh-git or git’s own Tab completions.
+Open a **new** terminal after install. Print a script without installing: `gtimed completion powershell`. Remove hooks: `gtimed completion uninstall`. Completion is for `gtimed` only (it does not wrap `git`).
 
 ---
 
-## Visual Source Control (IDE-style GUI)
-
-Cursor, VS Code, and GitHub Desktop own their Git panels. We cannot inject `--in` into those apps’ built-in Commit button. GTimed adds **its own** UI that uses the same scheduler:
+## Visual Source Control
 
 ```bash
 gtimed ui
+gtimed ui --port 8787 --cwd . --no-open
 ```
 
 Opens `http://127.0.0.1:8787` (localhost only): file list with stage checkboxes, commit message, Now / In / At / Cron, `--when`, optional push, and the job queue.
 
-```bash
-gtimed ui --port 8787 --cwd . --no-open
-```
-
 ### Cursor / VS Code extension
 
-`vscode-extension/` puts clock / upload buttons on the **Source Control** title bar (next to Git’s own Commit). It reads the SCM commit box, asks when to run, then calls GTimed.
-
-See [vscode-extension/README.md](vscode-extension/README.md) to install from this folder (junction into `~/.cursor/extensions` or **Developer: Install Extension from Location…**).
+`vscode-extension/` puts clock / upload buttons on the Source Control title bar. See [vscode-extension/README.md](vscode-extension/README.md).
 
 Command Palette: **GTimed: Schedule Commit**, **Schedule Push**, **Open Source Control UI**.
-
----
-
-## Storage
-
-Default home: `~/.gtimed` (override with `GTIMED_HOME`).
-
-```text
-~/.gtimed/
-  jobs.json          # queue
-  logs/<id>.log      # stdout/stderr + GTimed lines
-```
-
-Each job records `command`, `cwd`, git root and branch at schedule time, schedule fields, and status.
 
 ---
 
@@ -274,31 +244,35 @@ Each job records `command`, `cwd`, git root and branch at schedule time, schedul
 
 1. Load `pending` jobs.
 2. If `--until` is past → `failed`.
-3. Time gate: `--at`/`--in` must be due; `--cron` must match the **current minute** (at most once per minute).
+3. Time gate: `--at` / `--in` must be due; `--cron` must match the **current minute** (at most once per minute).
 4. Evaluate `--when`. If any fail, stay `pending` (unless `--until` already failed).
 5. If `--same-branch` and the branch moved → `skipped`.
-6. Spawn the command in the saved `cwd` with your current environment (credentials, `ssh-agent`, Git Credential Manager, etc.).
+6. Spawn the command in the saved `cwd` with your current environment (credentials, `ssh-agent`, Git Credential Manager).
 7. Non-zero exit: retry if attempts remain, else `failed`.
 
 `--dry-run` writes `would execute …` to the log and counts as success.
+
+Jobs live in `~/.gtimed/jobs.json` (override with `GTIMED_HOME`). Logs: `~/.gtimed/logs/<id>.log`.
 
 ---
 
 ## Safety
 
-- This is **not** GitHub. A scheduled push uses **your** machine, **your** remotes, **your** credentials, at **fire** time.
-- The command is not snapshotted as a commit object. If you `gtimed push --in 2h` and then commit more, those later commits are included.
+- This is **not** GitHub. A scheduled push uses **your** machine, remotes, and credentials at **fire** time.
+- The command is not snapshotted. If you `gtimed push --in 2h` and then commit more, those later commits are included.
+- Staged files are not snapshotted either; a delayed `commit` commits whatever is staged **then**.
 - `--when` and `--same-branch` exist because the tree can change between schedule and fire.
 - `cmd:` runs a shell. Only use commands you trust.
 - There is no confirmation prompt. `gtimed push --in 1m` will push when due.
 
 ---
 
-## Environment
+## Limitations
 
-| Variable | Purpose |
-| --- | --- |
-| `GTIMED_HOME` | Alternate data directory (useful in tests) |
+- No fire while the OS is asleep; no fire if neither daemon nor `install` / `tick` is running.
+- `--remote` / GitHub Actions execution is **not** implemented.
+- `--every` is stored but does not change OS tick frequency.
+- Not a patch to GitHub.com, upstream git, or VS Code’s built-in Commit button (use `gtimed ui` or the extension beside it).
 
 ---
 
@@ -311,35 +285,23 @@ npm test
 npx tsx src/index.ts --help
 ```
 
-Layout:
-
 ```text
 src/
   index.ts         CLI entry (bin: gtimed)
   parse.ts         Flag stripping, git-verb detection
   time.ts          Durations + natural-language dates
   conditions.ts    --when evaluators
-  runner.ts        tick / execute / job builder
+  runner.ts        tick / execute / enqueue
   store.ts         ~/.gtimed JSON store
   install.ts       schtasks / crontab
-  completion.ts    tab completion engine + shell scripts
+  completion.ts    tab completion
   repo.ts          git status / stage for the UI
   ui-server.ts     localhost Source Control GUI
-  parse.test.ts
-  completion.test.ts
 ui/                browser SCM panel
 vscode-extension/  Cursor / VS Code SCM buttons
 ```
 
----
-
-## Limitations (honest)
-
-- No fire while the OS is asleep; no fire if neither daemon nor `install`/`tick` is running.
-- `--remote` / GitHub Actions execution is **not** implemented (Git-Schedule has that pattern).
-- Staged files are **not** snapshotted; a delayed `commit` commits whatever is staged **then**.
-- `--every` is stored but does not change OS tick frequency.
-- Not a patch to GitHub.com, upstream git, or VS Code’s built-in Commit button (use `gtimed ui` or the extension beside it).
+Related tools: [Git-Schedule](https://github.com/mafex11/Git-Schedule), [GitLater](https://github.com/prakratt/GitLater), [grony](https://github.com/luismedel/grony). Those mostly special-case commit or push. GTimed wraps any command and can wait on repo conditions.
 
 ---
 
