@@ -7,6 +7,7 @@ import { installTick, uninstallTick } from "./install.js";
 import { GIT_VERBS, MANAGEMENT, canonicalCommand, parseScheduleArgs, quote } from "./parse.js";
 import { enqueueJob, executeJob, nextHint, statusHint, tick } from "./runner.js";
 import { help, helpFor, wantsHelp } from "./help.js";
+import { diagnose } from "./suggest.js";
 import {
   argsHaveScheduleFlags,
   discoverRealGit,
@@ -34,6 +35,13 @@ async function main(): Promise<void> {
 
   if (wantsHelp(argv)) {
     console.log(helpFor(argv));
+    return;
+  }
+
+  const problem = diagnose(argv);
+  if (problem) {
+    console.error(problem);
+    process.exitCode = 2;
     return;
   }
 
@@ -266,7 +274,18 @@ async function runShim(argv: string[]): Promise<void> {
 async function schedule(argv: string[]): Promise<void> {
   const parsed = parseScheduleArgs(argv);
   if (!parsed.command.length) {
-    console.log(help());
+    console.error("missing a command to run.");
+    console.error("Example: gtimed commit --in 20m");
+    console.error("Try gtimed --help");
+    process.exitCode = 2;
+    return;
+  }
+  if (!parsed.in && !parsed.at && !parsed.cron && !parsed.when.length && !parsed.now) {
+    const verb =
+      parsed.command[0] === "git" ? (parsed.command[1] ?? "commit") : (parsed.command[0] ?? "commit");
+    console.error("Provide --at, --in, --cron, --when, or --now.");
+    console.error(`Example: gtimed ${verb} --in 20m`);
+    process.exitCode = 1;
     return;
   }
 

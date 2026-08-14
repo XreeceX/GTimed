@@ -28,6 +28,23 @@ const WHEN_ALIASES: Record<string, string> = {
   stg: "staged",
 };
 
+export const WHEN_KEYWORDS = [
+  "clean",
+  "dirty",
+  "staged",
+  "stg",
+  "ahead",
+  "behind",
+  "remote-ok",
+  "ro",
+] as const;
+
+export function isWhenSpec(spec: string): boolean {
+  const lower = spec.trim().toLowerCase();
+  if ((WHEN_KEYWORDS as readonly string[]).includes(lower)) return true;
+  return lower.startsWith("branch=") || lower.startsWith("file=") || lower.startsWith("cmd:");
+}
+
 export function evalCondition(cwd: string, spec: string): ConditionResult {
   const raw = spec.trim();
   const lower = WHEN_ALIASES[raw.toLowerCase()] ?? raw.toLowerCase();

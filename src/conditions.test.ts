@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { evalAllConditions, evalCondition, repoMeta } from "./conditions.js";
+import { evalAllConditions, evalCondition, isWhenSpec, repoMeta } from "./conditions.js";
 import { git, gitRepo } from "./test-util.js";
 import type { Job } from "./store.js";
 
@@ -144,6 +144,16 @@ test("ahead is true after a local commit on a clone", () => {
 test("unknown condition throws", () => {
   const dir = gitRepo();
   assert.throws(() => evalCondition(dir, "purple"), /Unknown condition/);
+});
+
+test("isWhenSpec accepts keywords, aliases, and prefixes", () => {
+  assert.equal(isWhenSpec("clean"), true);
+  assert.equal(isWhenSpec("stg"), true);
+  assert.equal(isWhenSpec("ro"), true);
+  assert.equal(isWhenSpec("branch=main"), true);
+  assert.equal(isWhenSpec("file=a.txt"), true);
+  assert.equal(isWhenSpec("cmd:npm test"), true);
+  assert.equal(isWhenSpec("purple"), false);
 });
 
 test("evalAllConditions ANDs specs and short-circuits", () => {
