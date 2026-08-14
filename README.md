@@ -50,10 +50,19 @@ gtimed install
 
 (`npm install` also runs `prepare` → `tsc`, so `npm run build` is optional after a clean install.)
 
-`gtimed install` does two things:
+`gtimed install` is a **one-time machine setup**, like installing a global npm package. After that it keeps working when Cursor is closed or reopened:
 
-1. Writes a **git shim** to `~/.gtimed/shim` and puts that directory first on your **user PATH** (new terminals pick it up).
-2. Registers a **minute tick** (Windows Task Scheduler / crontab) so due jobs actually run.
+1. Puts **`gtimed`** on your user PATH (npm global bin).
+2. Puts a **git shim** first on PATH, including Git Bash (`~/.bashrc` / `env.sh`) so `git commit --in 10m` works in new terminals.
+3. Registers **Windows Task Scheduler** (or crontab) to run `tick` **every minute** and **at logon**, so due jobs fire without Cursor, `daemon`, or a terminal. The PC must be on and not asleep.
+
+```bash
+cd GTimed
+npm install
+npm run build
+npm install -g .
+gtimed install
+```
 
 Then in a **new** terminal:
 
@@ -191,7 +200,10 @@ gtimed --when dirty --until "tomorrow 6pm" -- git add -A
 
 ```text
 gtimed list                 # also: ls
-gtimed cancel <id>          # prefix of the 8-char id is enough if unique
+gtimed cancel <id>          # abort one job (prefix of the id is enough)
+gtimed cancel last          # abort the most recently scheduled pending job
+gtimed cancel --all         # abort every pending job
+gtimed abort                # same as cancel --all
 gtimed logs <id>
 gtimed run <id>             # fire now; still checks --when and --same-branch
 gtimed tick                 # run every due pending job, then exit

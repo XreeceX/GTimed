@@ -14,7 +14,7 @@ import {
   removeShimFromUserPath,
   writeShim,
 } from "./shim.js";
-import { getJob, loadStore, newJobId, shimDir, upsertJob } from "./store.js";
+import { cancelPending, getJob, loadStore, newJobId, pendingJobs, shimDir, upsertJob } from "./store.js";
 import { openBrowser, startUi } from "./ui-server.js";
 
 const VERSION = "0.1.0";
@@ -40,7 +40,9 @@ Conditions (--when, repeatable; all must pass):
 
 Jobs:
   gtimed list
-  gtimed cancel <id>
+  gtimed cancel <id>              abort one job (id prefix is enough)
+  gtimed abort                    abort every pending job
+  gtimed cancel --all | last
   gtimed logs <id>
   gtimed run <id>                 run now (still checks --when)
   gtimed tick                     run whatever is due (call from Task Scheduler/cron)
@@ -90,13 +92,9 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
     case "ls":
       printList();
       return;
-    case "cancel": {
-      const id = rest[0];
-      if (!id) throw new Error("usage: gtimed cancel <id>");
-      const job = requireJob(id);
-      job.status = "cancelled";
-      upsertJob(job);
-      console.log(`cancelled ${job.id}`);
+    case "cancel":
+    case "abort": {
+      handleCancel(cmd, rest);
       return;
     }
     case "logs": {
@@ -121,6 +119,10 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       const ran = await tick();
       if (!ran.length) console.log("nothing due");
       else ran.forEach((j) => console.log(`${j.id} -> ${j.status}`));
+      const waiting = loadStore().jobs.filter((j) => j.status === "pending");
+      for (const j of waiting) {
+        console.log(`${j.id}  still waiting  ${nextHint(j)}`);
+      }
       return;
     }
     case "daemon": {
@@ -138,7 +140,12 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       console.log(prependShimToUserPath(dir));
       console.log(installTick());
       console.log(installCompletion());
-      console.log('Try in a new terminal: git commit -m "Hello world" --in 20m');
+      console.log("Installed for this machine (survives closing Cursor):");
+      console.log("  • gtimed on PATH (npm global)");
+      console.log("  • git --in / --at via shim (Git Bash, PowerShell, cmd)");
+      console.log("  • jobs fire every minute via Task Scheduler / cron (PC must be on)");
+      console.log("Open a NEW terminal (or restart Cursor once), then:");
+      console.log('  git commit -m "Hello world" --in 20m');
       return;
     }
     case "uninstall":
@@ -191,6 +198,52 @@ async function startUiCli(rest: string[]): Promise<void> {
   console.log(`  cwd ${cwd}`);
   if (open) openBrowser(url);
   await new Promise(() => {});
+}
+
+function handleCancel(cmd: string, rest: string[]): void {
+  const arg = rest[0];
+  const all =
+    (cmd === "abort" && !arg) ||
+    arg === "--all" ||
+    arg === "-a" ||
+    arg === "all" ||
+    arg === "*";
+
+  if (all) {
+    const cancelled = cancelPending("all");
+    if (!cancelled.length) {
+      console.log("no pending jobs");
+      return;
+    }
+    for (const job of cancelled) {
+      console.log(`cancelled ${job.id}  ${job.command.join(" ")}`);
+    }
+    console.log(`aborted ${cancelled.length} pending job(s)`);
+    return;
+  }
+
+  if (!arg) {
+    const pending = pendingJobs();
+    if (!pending.length) {
+      console.log("no pending jobs");
+      return;
+    }
+    console.log("pending jobs:");
+    for (const j of pending) {
+      console.log(`  ${j.id}  ${nextHint(j)}  ${j.command.join(" ")}`);
+    }
+    console.log("usage: gtimed cancel <id> | last | --all");
+    console.log("       gtimed abort              (same as cancel --all)");
+    return;
+  }
+
+  const cancelled = cancelPending(arg === "last" ? "last" : arg);
+  if (!cancelled.length) {
+    throw new Error(`no pending job matching "${arg}"`);
+  }
+  for (const job of cancelled) {
+    console.log(`cancelled ${job.id}  ${job.command.join(" ")}`);
+  }
 }
 
 function handleCompletion(rest: string[]): void {

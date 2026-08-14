@@ -90,6 +90,36 @@ export function getJob(id: string): Job | undefined {
   return matches.length === 1 ? matches[0] : matches.find((j) => j.id === id);
 }
 
+export function pendingJobs(): Job[] {
+  return loadStore().jobs.filter((j) => j.status === "pending");
+}
+
+export function cancelPending(which: "all" | "last" | string): Job[] {
+  const store = loadStore();
+  const pending = store.jobs.filter((j) => j.status === "pending");
+  let targets: Job[] = [];
+
+  if (which === "all") {
+    targets = pending;
+  } else if (which === "last") {
+    const last = [...pending].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (last) targets = [last];
+  } else {
+    const prefix = which.toLowerCase();
+    const matches = pending.filter(
+      (j) => j.id === which || j.id.toLowerCase().startsWith(prefix),
+    );
+    const hit = matches.length === 1 ? matches[0] : matches.find((j) => j.id === which);
+    if (hit) targets = [hit];
+  }
+
+  for (const job of targets) {
+    job.status = "cancelled";
+  }
+  if (targets.length) saveStore(store);
+  return targets;
+}
+
 export function upsertJob(job: Job): void {
   const store = loadStore();
   const i = store.jobs.findIndex((j) => j.id === job.id);

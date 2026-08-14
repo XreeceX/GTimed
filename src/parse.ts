@@ -2,6 +2,7 @@ export const MANAGEMENT = new Set([
   "list",
   "ls",
   "cancel",
+  "abort",
   "rm",
   "status",
   "logs",

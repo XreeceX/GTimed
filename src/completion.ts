@@ -10,6 +10,7 @@ export const ROOT_COMMANDS = [
   "list",
   "ls",
   "cancel",
+  "abort",
   "logs",
   "run",
   "tick",
@@ -37,7 +38,8 @@ export const WHEN_VALUES = [
 
 export const DURATIONS = ["30s", "1m", "5m", "10m", "15m", "20m", "30m", "1h", "2h", "6h", "1d"];
 
-const JOB_CMDS = new Set(["cancel", "logs", "log", "run"]);
+const JOB_CMDS = new Set(["cancel", "abort", "logs", "log", "run"]);
+const CANCEL_EXTRAS = ["--all", "all", "last"];
 const SHIM_CMDS = ["install", "uninstall", "status"];
 const COMPLETION_CMDS = ["bash", "zsh", "fish", "powershell", "install", "uninstall"];
 const FLAG_NAMES = Object.keys(FLAGS);
@@ -80,6 +82,11 @@ export function suggestions(words: string[], cword: number, opts: SuggestOpts = 
     pool = SHIM_CMDS;
   } else if (words[1] === "completion" && cword === 2) {
     pool = COMPLETION_CMDS;
+  } else if (
+    (words[1] === "cancel" || words[1] === "abort") &&
+    cword === 2
+  ) {
+    pool = [...CANCEL_EXTRAS, ...(opts.jobs ?? loadStore().jobs.filter((j) => j.status === "pending").map((j) => j.id))];
   } else if (JOB_CMDS.has(words[1] ?? "") && cword === 2) {
     pool = opts.jobs ?? loadStore().jobs.map((j) => j.id);
   } else if (current.startsWith("-")) {
