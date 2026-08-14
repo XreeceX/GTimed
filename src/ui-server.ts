@@ -4,8 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { repoState, stagePaths } from "./repo.js";
-import { buildJob, executeJob } from "./runner.js";
-import { getJob, loadStore, newJobId, upsertJob } from "./store.js";
+import { enqueueJob, executeJob } from "./runner.js";
+import { getJob, loadStore, upsertJob } from "./store.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -109,20 +109,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, defau
         until: body.until,
         retry: body.retry,
       };
-      const commitJob = buildJob({
+      const commitJob = enqueueJob({
         ...parsed,
         when: parsed.when,
         dryRun: parsed.dryRun,
         now: parsed.now,
         sameBranch: parsed.sameBranch,
         cwd: jobCwd,
-        id: newJobId(),
-      });
-      upsertJob(commitJob);
+      }).job;
 
       let pushJob = null;
       if (body.push) {
-        pushJob = buildJob({
+        pushJob = enqueueJob({
           command: ["git", "push"],
           in: parsed.in,
           at: parsed.at,
@@ -132,10 +130,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, defau
           now: parsed.now,
           sameBranch: parsed.sameBranch,
           cwd: jobCwd,
-          id: newJobId(),
           name: "push",
-        });
-        upsertJob(pushJob);
+        }).job;
       }
 
       if (parsed.now) {

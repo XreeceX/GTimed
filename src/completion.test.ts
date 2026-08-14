@@ -35,22 +35,17 @@ test("gtimed cancel prefix matches job ids", () => {
   assert.deepEqual(out, ["abc123"]);
 });
 
-test("git commit --i → --in", () => {
+test("git itself is not completed by gtimed", () => {
   const out = suggestions(["git", "commit", "--i"], 2);
-  assert.ok(out.includes("--in"));
-});
-
-test("git commit ma does not steal branch names", () => {
-  const out = suggestions(["git", "commit", "ma"], 2);
   assert.deepEqual(out, []);
 });
 
-test("gtimed shim in → install", () => {
-  const out = suggestions(["gtimed", "shim", "in"], 2);
-  assert.deepEqual(out, ["install"]);
-});
-
-test("zsh git completion also offers values after --in", () => {
-  const script = scriptFor("zsh");
-  assert.match(script, /\$prev" == --in/);
+test("shell scripts complete gtimed only", () => {
+  const zsh = scriptFor("zsh");
+  const bash = scriptFor("bash");
+  assert.match(zsh, /compdef _gtimed gtimed/);
+  assert.doesNotMatch(zsh, /git-timed/);
+  assert.doesNotMatch(zsh, /compdef _gtimed_git git/);
+  assert.doesNotMatch(bash, /git-timed/);
+  assert.doesNotMatch(bash, /complete .* git\b/);
 });

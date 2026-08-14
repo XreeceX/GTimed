@@ -2,12 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { ensureHome, homeDir, shimDir } from "./store.js";
-
-function entryJs(): string {
-  return path.resolve(fileURLToPath(new URL("./index.js", import.meta.url)));
-}
+import { homeDir, shimDir } from "./store.js";
 
 export const SHIM_FLAGS = new Set([
   "--at",
@@ -70,34 +65,6 @@ function isShimPath(p: string): boolean {
   return path.resolve(p).toLowerCase().startsWith(shim);
 }
 
-export function writeShim(): string {
-  ensureHome();
-  const dir = shimDir();
-  const node = process.execPath;
-  const entry = entryJs();
-  const real = discoverRealGit();
-  fs.writeFileSync(realGitRecord(), real, "utf8");
-
-  const cmd = `@echo off\r
-set "GTIMED_REAL_GIT=${real}"\r
-"${node}" "${entry}" __shim git %*\r
-`;
-  fs.writeFileSync(path.join(dir, "git.cmd"), cmd, "utf8");
-
-  const ps1 = `$env:GTIMED_REAL_GIT = '${real.replaceAll("'", "''")}'
-& "${node}" "${entry}" __shim git @args
-`;
-  fs.writeFileSync(path.join(dir, "git.ps1"), ps1, "utf8");
-
-  const sh = `#!/usr/bin/env bash
-export GTIMED_REAL_GIT=${shellQuote(real)}
-exec ${shellQuote(node)} ${shellQuote(entry)} __shim git "$@"
-`;
-  fs.writeFileSync(path.join(dir, "git"), sh, { encoding: "utf8", mode: 0o755 });
-
-  return dir;
-}
-
 export function removeShim(): void {
   const dir = shimDir();
   for (const name of ["git", "git.cmd", "git.ps1"]) {
@@ -106,17 +73,16 @@ export function removeShim(): void {
   }
   const recorded = realGitRecord();
   if (fs.existsSync(recorded)) fs.unlinkSync(recorded);
+  const env = path.join(homeDir(), "env.sh");
+  if (fs.existsSync(env)) fs.unlinkSync(env);
 }
 
-export function prependShimToUserPath(dir: string): string {
-  writeBashEnv();
-  if (process.platform === "win32") {
-    const win = prependWindowsUserPath(dir);
-    const npm = prependWindowsUserPath(path.join(os.homedir(), "AppData", "Roaming", "npm"));
-    const bash = upsertBashPath();
-    return `${win}\n${npm}\nGit Bash: ${bash}`;
+export function ensureNpmOnUserPath(): string {
+  if (process.platform !== "win32") {
+    return "Use `npm install -g gtimed` (or npm link) so gtimed is on PATH.";
   }
-  return upsertBashPath();
+  const npm = path.join(os.homedir(), "AppData", "Roaming", "npm");
+  return prependWindowsUserPath(npm);
 }
 
 export function removeShimFromUserPath(dir: string): string {
@@ -126,38 +92,6 @@ export function removeShimFromUserPath(dir: string): string {
     return `${win}\n${bash}`;
   }
   return removeUnixPath(dir);
-}
-
-function writeBashEnv(): void {
-  ensureHome();
-  const env = path.join(homeDir(), "env.sh");
-  fs.writeFileSync(
-    env,
-    `# sourced from ~/.bashrc so Git Bash finds the shim after /usr/bin/git\nexport PATH="$HOME/.gtimed/shim:$PATH"\n`,
-    "utf8",
-  );
-}
-
-function upsertBashPath(): string {
-  const line = `[ -f "$HOME/.gtimed/env.sh" ] && . "$HOME/.gtimed/env.sh"`;
-  const block = `\n${PATH_MARK}\n${line}\n`;
-  const files = [
-    path.join(os.homedir(), ".bashrc"),
-    path.join(os.homedir(), ".bash_profile"),
-    path.join(os.homedir(), ".profile"),
-  ];
-  const touched: string[] = [];
-  for (const file of files) {
-    let cur = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    if (cur.includes(PATH_MARK)) {
-      cur = cur.replace(/\n?# gtimed git shim\n(?:.*\n)?/, block);
-      fs.writeFileSync(file, cur, "utf8");
-    } else {
-      fs.appendFileSync(file, block, "utf8");
-    }
-    touched.push(file);
-  }
-  return `Hooked ${touched.join(", ")} (new Git Bash windows load the shim automatically).`;
 }
 
 function prependWindowsUserPath(dir: string): string {
@@ -176,7 +110,7 @@ $next = (@($dir) + $parts) -join ';'
   if (r.status !== 0) {
     throw new Error(r.stderr || r.stdout || "failed to update user PATH");
   }
-  return `Prepended ${dir} to your user PATH. Open a new terminal for git --in / --at to work.`;
+  return `Prepended ${dir} to your user PATH. Open a new terminal for gtimed to work.`;
 }
 
 function removeWindowsUserPath(dir: string): string {
@@ -201,21 +135,9 @@ function profileFiles(): string[] {
   return [
     path.join(home, ".zshrc"),
     path.join(home, ".bashrc"),
+    path.join(home, ".bash_profile"),
     path.join(home, ".profile"),
   ];
-}
-
-function prependUnixPath(dir: string): string {
-  const line = `export PATH="${dir}:$PATH"`;
-  const block = `\n${PATH_MARK}\n${line}\n`;
-  const targets = profileFiles().filter((p) => fs.existsSync(p));
-  const files = targets.length ? targets : [path.join(os.homedir(), ".profile")];
-  for (const file of files) {
-    const cur = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    if (cur.includes(PATH_MARK)) continue;
-    fs.appendFileSync(file, block, "utf8");
-  }
-  return `Added ${dir} to PATH in ${files.join(", ")}. Open a new shell, or: export PATH="${dir}:$PATH"`;
 }
 
 function removeUnixPath(dir: string): string {
@@ -225,9 +147,10 @@ function removeUnixPath(dir: string): string {
     const next: string[] = [];
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].includes(PATH_MARK)) {
-        if (lines[i + 1]?.includes(dir)) i += 1;
+        if (i + 1 < lines.length) i += 1;
         continue;
       }
+      if (lines[i].includes(".gtimed/env.sh")) continue;
       if (lines[i].includes(dir) && lines[i].includes("gtimed") && lines[i].includes("shim")) {
         continue;
       }
@@ -235,9 +158,5 @@ function removeUnixPath(dir: string): string {
     }
     fs.writeFileSync(file, next.join("\n"), "utf8");
   }
-  return `Removed ${dir} from shell profiles.`;
-}
-
-function shellQuote(s: string): string {
-  return `'${s.replaceAll("'", `'\\''`)}'`;
+  return `Removed leftover git shim PATH hooks from shell profiles.`;
 }

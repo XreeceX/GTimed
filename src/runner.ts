@@ -2,7 +2,15 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { CronExpressionParser } from "cron-parser";
 import { evalAllConditions, repoMeta } from "./conditions.js";
-import { loadStore, logsDir, type Job, upsertJob } from "./store.js";
+import {
+  cancelOtherPendingDuplicates,
+  findPendingDuplicate,
+  loadStore,
+  logsDir,
+  newJobId,
+  type Job,
+  upsertJob,
+} from "./store.js";
 import { minuteKey, parseDurationMs, parseWhen } from "./time.js";
 
 function logLine(job: Job, line: string): void {
@@ -248,4 +256,16 @@ export function buildJob(opts: {
   };
 
   return job;
+}
+
+/** Create or replace the pending job for this command in this directory. */
+export function enqueueJob(
+  opts: Omit<Parameters<typeof buildJob>[0], "id"> & { id?: string },
+): { job: Job; replaced: boolean } {
+  const existing = findPendingDuplicate(opts.command, opts.cwd);
+  const id = existing?.id ?? opts.id ?? newJobId();
+  cancelOtherPendingDuplicates(opts.command, opts.cwd, id);
+  const job = buildJob({ ...opts, id });
+  upsertJob(job);
+  return { job, replaced: Boolean(existing) };
 }

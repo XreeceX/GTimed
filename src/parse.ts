@@ -12,7 +12,6 @@ export const MANAGEMENT = new Set([
   "daemon",
   "install",
   "uninstall",
-  "shim",
   "completion",
   "ui",
   "help",
@@ -21,8 +20,6 @@ export const MANAGEMENT = new Set([
   "version",
   "-V",
   "--version",
-  "__shim",
-  "__complete",
 ]);
 
 export const GIT_VERBS = new Set([

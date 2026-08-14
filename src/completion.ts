@@ -17,7 +17,6 @@ export const ROOT_COMMANDS = [
   "daemon",
   "install",
   "uninstall",
-  "shim",
   "completion",
   "ui",
   "help",
@@ -40,7 +39,6 @@ export const DURATIONS = ["30s", "1m", "5m", "10m", "15m", "20m", "30m", "1h", "
 
 const JOB_CMDS = new Set(["cancel", "abort", "logs", "log", "run"]);
 const CANCEL_EXTRAS = ["--all", "all", "last"];
-const SHIM_CMDS = ["install", "uninstall", "status"];
 const COMPLETION_CMDS = ["bash", "zsh", "fish", "powershell", "install", "uninstall"];
 const FLAG_NAMES = Object.keys(FLAGS);
 const VALUE_FLAGS = new Set(
@@ -65,21 +63,20 @@ export function suggestions(words: string[], cword: number, opts: SuggestOpts = 
       .pop()
       ?.replace(/\.cmd$/i, "")
       ?.replace(/\.exe$/i, "") ?? "";
-  const gitMode = bin === "git";
 
   let pool: string[] = [];
+
+  if (bin === "git") {
+    return [];
+  }
 
   if (prev === "--when") pool = WHEN_VALUES;
   else if (prev === "--in" || prev === "--every" || prev === "--timeout") pool = DURATIONS;
   else if (prev === "--retry") pool = ["0", "1", "2", "3"];
   else if (prev === "--cron") pool = ["0 * * * *", "0 */4 * * *", "0 9 * * 1-5", "0 18 * * 1-5"];
   else if (VALUE_FLAGS.has(prev)) pool = [];
-  else if (gitMode) {
-    pool = current.startsWith("-") ? FLAG_NAMES : [];
-  } else if (cword <= 1) {
+  else if (cword <= 1) {
     pool = [...ROOT_COMMANDS, ...GIT_VERBS, ...FLAG_NAMES];
-  } else if (words[1] === "shim" && cword === 2) {
-    pool = SHIM_CMDS;
   } else if (words[1] === "completion" && cword === 2) {
     pool = COMPLETION_CMDS;
   } else if (
@@ -140,24 +137,7 @@ _gtimed() {
   COMPREPLY=( $(compgen -W "$out" -- "$cur") )
 }
 
-_gtimed_git() {
-  local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  if [[ "$cur" == -* || "$prev" == --in || "$prev" == --at || "$prev" == --when || "$prev" == --cron || "$prev" == --until || "$prev" == --every || "$prev" == --timeout || "$prev" == --retry || "$prev" == --name || "$prev" == --cwd ]]; then
-    local extra
-    extra="$(${invoke} __complete "$COMP_CWORD" -- "\${COMP_WORDS[@]}" 2>/dev/null)"
-    COMPREPLY=( $(compgen -W "$extra" -- "$cur") )
-  fi
-  if declare -F _git >/dev/null; then
-    local ours=("\${COMPREPLY[@]}")
-    _git
-    COMPREPLY+=("\${ours[@]}")
-  fi
-}
-
 complete -o default -F _gtimed gtimed
-complete -o default -F _gtimed git-timed
-complete -o bashdefault -o default -F _gtimed_git git
 `;
 }
 
@@ -172,21 +152,6 @@ _gtimed() {
 }
 
 compdef _gtimed gtimed
-compdef _gtimed git-timed
-
-_gtimed_git() {
-  local cur="\${words[CURRENT]}"
-  local prev="\${words[CURRENT-1]}"
-  if [[ "$cur" == -* || "$prev" == --in || "$prev" == --at || "$prev" == --when || "$prev" == --cron || "$prev" == --until || "$prev" == --every || "$prev" == --timeout || "$prev" == --retry || "$prev" == --name || "$prev" == --cwd ]]; then
-    _gtimed
-    return 0
-  fi
-  if (( $+functions[_git] )); then
-    _git
-  fi
-}
-
-compdef _gtimed_git git
 `;
 }
 
@@ -201,7 +166,6 @@ function __gtimed_complete
 end
 
 complete -c gtimed -f -a '(__gtimed_complete)'
-complete -c git-timed -f -a '(__gtimed_complete)'
 `;
 }
 
@@ -224,7 +188,6 @@ $gtimedCompleter = {
 }
 
 Register-ArgumentCompleter -Native -CommandName gtimed -ScriptBlock $gtimedCompleter
-Register-ArgumentCompleter -Native -CommandName git-timed -ScriptBlock $gtimedCompleter
 `;
 }
 
@@ -259,7 +222,6 @@ export function installCompletion(): string {
   }
 
   notes.push("Open a new terminal, then: gtimed ca<Tab>  →  cancel");
-  notes.push("Git flags: git commit --i<Tab>  →  --in");
   return notes.filter(Boolean).join("\n");
 }
 

@@ -3,9 +3,9 @@ import test from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildJob, dueByTime, executeJob, quoteWinCmdArg, tick } from "./runner.js";
+import { buildJob, dueByTime, enqueueJob, executeJob, quoteWinCmdArg, tick } from "./runner.js";
 import type { Job } from "./store.js";
-import { upsertJob } from "./store.js";
+import { loadStore, upsertJob } from "./store.js";
 import { minuteKey } from "./time.js";
 
 function isolatedHome(): string {
@@ -154,4 +154,75 @@ test("tick runs a due dry-run cron job once per minute", async () => {
   assert.equal(ran.length, 1);
   const ran2 = await tick(now);
   assert.equal(ran2.length, 0);
+});
+
+test("rescheduling the same command overwrites the pending time", () => {
+  isolatedHome();
+  const cwd = process.cwd();
+  const first = enqueueJob({
+    command: ["git", "push"],
+    cwd,
+    in: "20m",
+    when: [],
+    dryRun: false,
+    now: false,
+    sameBranch: false,
+  });
+  assert.equal(first.replaced, false);
+
+  const second = enqueueJob({
+    command: ["git", "push"],
+    cwd,
+    in: "5m",
+    when: [],
+    dryRun: false,
+    now: false,
+    sameBranch: false,
+  });
+  assert.equal(second.replaced, true);
+  assert.equal(second.job.id, first.job.id);
+  assert.ok(second.job.at);
+  assert.ok(first.job.at);
+  assert.ok(Date.parse(second.job.at!) < Date.parse(first.job.at!));
+
+  const pending = loadStore().jobs.filter((j) => j.status === "pending" && j.command[1] === "push");
+  assert.equal(pending.length, 1);
+});
+
+test("a different command or cwd keeps a separate job", () => {
+  isolatedHome();
+  const cwd = process.cwd();
+  const push = enqueueJob({
+    command: ["git", "push"],
+    cwd,
+    in: "20m",
+    when: [],
+    dryRun: false,
+    now: false,
+    sameBranch: false,
+  });
+  const commit = enqueueJob({
+    command: ["git", "commit", "-m", "x"],
+    cwd,
+    in: "20m",
+    when: [],
+    dryRun: false,
+    now: false,
+    sameBranch: false,
+  });
+  assert.equal(commit.replaced, false);
+  assert.notEqual(commit.job.id, push.job.id);
+
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-cwd-"));
+  const pushOther = enqueueJob({
+    command: ["git", "push"],
+    cwd: other,
+    in: "5m",
+    when: [],
+    dryRun: false,
+    now: false,
+    sameBranch: false,
+  });
+  assert.equal(pushOther.replaced, false);
+  assert.notEqual(pushOther.job.id, push.job.id);
 });

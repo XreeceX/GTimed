@@ -5,16 +5,15 @@ import { spawnSync } from "node:child_process";
 import { installCompletion, scriptFor, suggestions, uninstallCompletion } from "./completion.js";
 import { installTick, uninstallTick } from "./install.js";
 import { GIT_VERBS, MANAGEMENT, parseScheduleArgs, quote } from "./parse.js";
-import { buildJob, executeJob, nextHint, tick } from "./runner.js";
+import { enqueueJob, executeJob, nextHint, tick } from "./runner.js";
 import {
   argsHaveScheduleFlags,
   discoverRealGit,
-  prependShimToUserPath,
+  ensureNpmOnUserPath,
   removeShim,
   removeShimFromUserPath,
-  writeShim,
 } from "./shim.js";
-import { cancelPending, getJob, loadStore, newJobId, pendingJobs, shimDir, upsertJob } from "./store.js";
+import { cancelPending, getJob, loadStore, pendingJobs, shimDir } from "./store.js";
 import { openBrowser, startUi } from "./ui-server.js";
 
 const VERSION = "0.1.0";
@@ -23,16 +22,14 @@ function help(): string {
   return `
 gtimed — schedule git (or any CLI) for later, on a cron, or when a condition matches.
 
-After gtimed install, these flags work on normal git:
-
-  git commit -m "Hello world" --in 20m
-  git push --at "tomorrow 9am"
-  git fetch --cron "0 */4 * * *"
-  git push --when clean
-
-Same flags on gtimed / any CLI:
-  gtimed commit --at "tomorrow 9am" -m "ship docs"
+  gtimed commit --in 20m -m "Hello world"
+  gtimed push --at "tomorrow 9am"
+  gtimed fetch --cron "0 */4 * * *"
+  gtimed --when clean -- git push
   gtimed --in 30m -- gh pr create --fill
+
+Rescheduling the same command in the same directory replaces the pending job
+with the new --in / --at / --cron / --when.
 
 Conditions (--when, repeatable; all must pass):
   clean | dirty | staged | ahead | behind | remote-ok
@@ -47,7 +44,7 @@ Jobs:
   gtimed run <id>                 run now (still checks --when)
   gtimed tick                     run whatever is due (call from Task Scheduler/cron)
   gtimed daemon                   loop ticks every 15s while this process lives
-  gtimed install                  git flags on PATH + OS minute tick + tab completion
+  gtimed install                  PATH + OS minute tick + tab completion
   gtimed completion               bash | zsh | fish | powershell | install
   gtimed ui                       Source Control GUI (browser)
   gtimed uninstall
@@ -135,17 +132,16 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       return;
     }
     case "install": {
-      const dir = writeShim();
-      console.log(`git shim: ${dir}`);
-      console.log(prependShimToUserPath(dir));
+      console.log(removeShimFromUserPath(shimDir()));
+      removeShim();
+      console.log(ensureNpmOnUserPath());
       console.log(installTick());
       console.log(installCompletion());
       console.log("Installed for this machine (survives closing Cursor):");
       console.log("  • gtimed on PATH (npm global)");
-      console.log("  • git --in / --at via shim (Git Bash, PowerShell, cmd)");
       console.log("  • jobs fire every minute via Task Scheduler / cron (PC must be on)");
       console.log("Open a NEW terminal (or restart Cursor once), then:");
-      console.log('  git commit -m "Hello world" --in 20m');
+      console.log('  gtimed commit --in 20m -m "Hello world"');
       return;
     }
     case "uninstall":
@@ -153,16 +149,13 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
       console.log(removeShimFromUserPath(shimDir()));
       removeShim();
       console.log(uninstallCompletion());
-      console.log("Removed git shim.");
+      console.log("Uninstalled gtimed tick, leftover git shim, and completion hooks.");
       return;
     case "completion":
       handleCompletion(rest);
       return;
     case "ui":
       await startUiCli(rest);
-      return;
-    case "shim":
-      handleShim(rest);
       return;
     case "help":
     case "-h":
@@ -276,37 +269,16 @@ function runComplete(argv: string[]): void {
   }
 }
 
-function handleShim(rest: string[]): void {
-  const action = rest[0] ?? "status";
-  if (action === "install") {
-    const dir = writeShim();
-    console.log(`Wrote git shim in ${dir}`);
-    console.log(prependShimToUserPath(dir));
-    console.log("Commands without --in / --at / --when still go to real git.");
-    console.log('  git commit -m "Hello world" --in 20m');
-    return;
-  }
-  if (action === "uninstall") {
-    console.log(removeShimFromUserPath(shimDir()));
-    removeShim();
-    console.log("Removed git shim.");
-    return;
-  }
-  const dir = shimDir();
-  const present = fs.existsSync(path.join(dir, "git.cmd")) || fs.existsSync(path.join(dir, "git"));
-  console.log(present ? `shim present: ${dir}` : "shim not installed (gtimed install)");
-  console.log(`real git: ${discoverRealGit()}`);
-}
-
 async function runShim(argv: string[]): Promise<void> {
-  const tool = argv[0] ?? "git";
   const rest = argv.slice(1);
-  if (!argsHaveScheduleFlags(rest)) {
-    const r = spawnSync(discoverRealGit(), rest, { stdio: "inherit", windowsHide: true });
-    process.exitCode = r.status ?? 1;
+  if (argsHaveScheduleFlags(rest)) {
+    console.error("git does not accept --in / --at / --when / --cron.");
+    console.error('Schedule with gtimed instead, e.g.  gtimed commit --in 20m -m "..."');
+    process.exitCode = 2;
     return;
   }
-  await schedule([tool, ...rest]);
+  const r = spawnSync(discoverRealGit(), rest, { stdio: "inherit", windowsHide: true });
+  process.exitCode = r.status ?? 1;
 }
 
 async function schedule(argv: string[]): Promise<void> {
@@ -316,12 +288,10 @@ async function schedule(argv: string[]): Promise<void> {
     return;
   }
 
-  const job = buildJob({
+  const { job, replaced } = enqueueJob({
     ...parsed,
     cwd: parsed.cwd ? path.resolve(parsed.cwd) : process.cwd(),
-    id: newJobId(),
   });
-  upsertJob(job);
 
   if (parsed.now) {
     const ran = await executeJob(job);
@@ -329,7 +299,7 @@ async function schedule(argv: string[]): Promise<void> {
     return;
   }
 
-  console.log(`scheduled ${job.id}`);
+  console.log(`${replaced ? "updated" : "scheduled"} ${job.id}`);
   console.log(`  cmd   ${quote(job.command)}`);
   console.log(`  cwd   ${job.cwd}`);
   console.log(`  when  ${nextHint(job)}${job.when.length ? ` if ${job.when.join(" & ")}` : ""}`);

@@ -94,6 +94,42 @@ export function pendingJobs(): Job[] {
   return loadStore().jobs.filter((j) => j.status === "pending");
 }
 
+export function commandsEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+function sameCwd(a: string, b: string): boolean {
+  const left = path.resolve(a);
+  const right = path.resolve(b);
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+/** Newest pending job with the same command in the same working directory. */
+export function findPendingDuplicate(command: string[], cwd: string): Job | undefined {
+  const matches = pendingJobs().filter(
+    (j) => commandsEqual(j.command, command) && sameCwd(j.cwd, cwd),
+  );
+  return [...matches].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+
+export function cancelOtherPendingDuplicates(command: string[], cwd: string, keepId: string): Job[] {
+  const store = loadStore();
+  const targets = store.jobs.filter(
+    (j) =>
+      j.status === "pending" &&
+      j.id !== keepId &&
+      commandsEqual(j.command, command) &&
+      sameCwd(j.cwd, cwd),
+  );
+  for (const job of targets) {
+    job.status = "cancelled";
+  }
+  if (targets.length) saveStore(store);
+  return targets;
+}
+
 export function cancelPending(which: "all" | "last" | string): Job[] {
   const store = loadStore();
   const pending = store.jobs.filter((j) => j.status === "pending");

@@ -2,16 +2,16 @@
 
 **Schedule git (and any other CLI) for later, on a cron, or when a condition matches.**
 
-GitHub and `git.exe` have no `--in` / `--at`. After install, GTimed puts a **git shim** first on PATH so those flags work on the commands you already type:
+GitHub and `git.exe` have no `--in` / `--at`. GTimed is a separate command that wraps git (or `gh`, or any CLI) and runs it later:
 
 ```bash
-git commit -m "Hello world" --in 20m
-git push --at "tomorrow 9am"
-git fetch --cron "0 */4 * * *"
-git push --when clean
+gtimed commit --in 20m -m "Hello world"
+gtimed push --at "tomorrow 9am"
+gtimed fetch --cron "0 */4 * * *"
+gtimed --when clean -- git push
 ```
 
-Without those flags, `git` is unchanged (`git status` still hits real git). `gtimed …` still wraps any CLI (`gh`, scripts, …).
+`git` itself is unchanged. Schedule flags live on `gtimed` only.
 
 ---
 
@@ -22,7 +22,7 @@ Without those flags, `git` is unchanged (`git status` still hits real git). `gti
 | GitHub.com | No. Actions cron runs **CI on GitHub**, not your working tree. |
 | `git` | No. Extra flags error out. |
 | OS `at` / cron / Task Scheduler | Yes, but you retype the full command and cwd every time. |
-| GTimed | Yes: git shim (`git commit --in 20m`), job list, logs, conditions. |
+| GTimed | Yes: `gtimed push --in 20m`, job list, logs, conditions. |
 
 Related tools on GitHub ([Git-Schedule](https://github.com/mafex11/Git-Schedule), [GitLater](https://github.com/prakratt/GitLater), [grony](https://github.com/luismedel/grony)) mostly special-case **commit** or **push**. GTimed wraps **any** command and can wait on repo conditions.
 
@@ -53,8 +53,8 @@ gtimed install
 `gtimed install` is a **one-time machine setup**, like installing a global npm package. After that it keeps working when Cursor is closed or reopened:
 
 1. Puts **`gtimed`** on your user PATH (npm global bin).
-2. Puts a **git shim** first on PATH, including Git Bash (`~/.bashrc` / `env.sh`) so `git commit --in 10m` works in new terminals.
-3. Registers **Windows Task Scheduler** (or crontab) to run `tick` **every minute** and **at logon**, so due jobs fire without Cursor, `daemon`, or a terminal. The PC must be on and not asleep.
+2. Registers **Windows Task Scheduler** (or crontab) to run `tick` **every minute** and **at logon**, so due jobs fire without Cursor, `daemon`, or a terminal. The PC must be on and not asleep.
+3. Installs **tab completion** for `gtimed`.
 
 ```bash
 cd GTimed
@@ -67,40 +67,16 @@ gtimed install
 Then in a **new** terminal:
 
 ```bash
-git commit -m "Hello world" --in 20m
+gtimed commit --in 20m -m "Hello world"
 ```
 
-That puts two extra commands on PATH as well:
-
-| Command | Role |
-| --- | --- |
-| `gtimed` | Scheduler CLI (list, cancel, tick, wrap `gh`, …) |
-| `git-timed` | Git subcommand → `git timed …` |
-
-Uninstall: `gtimed uninstall` (removes shim PATH entry, shim files, and the OS timer). Unlink the npm bin with `npm unlink -g gtimed`.
-
-Until you open a new terminal, you can prepend PATH for the current session:
-
-```powershell
-$env:Path = "$env:USERPROFILE\.gtimed\shim;" + $env:Path
-```
-
-```bash
-export PATH="$HOME/.gtimed/shim:$PATH"
-```
+Uninstall: `gtimed uninstall` (removes the OS timer and completion hooks). Unlink the npm bin with `npm unlink -g gtimed`.
 
 ---
 
 ## Quick start
 
 ```bash
-# after gtimed install — flags on real git
-git commit -m "Hello world" --in 20m
-git push --at "tomorrow 9am"
-git fetch --cron "0 */4 * * *"
-git push --when clean
-
-# same flags via gtimed (any CLI)
 gtimed push --in 20m
 gtimed commit --at "tomorrow 9am" -m "release notes"
 gtimed fetch --at "2026-08-14T09:00"
@@ -137,6 +113,15 @@ gtimed --in 1h -- gh pr create --fill
 ```
 
 `--` is the safe form when the wrapped tool also uses `--at` / `--in` / `--when`.
+
+If a **pending** job already exists for the same command in the same directory, the new `--in` / `--at` / `--cron` / `--when` **replaces** that job (same id). A different message, remote, or cwd is a new job.
+
+```bash
+gtimed push --in 20m
+gtimed push --in 5m          # updates the existing git push job to 5m
+gtimed commit --in 1h -m "a"
+gtimed commit --in 10m -m "b"  # different -m → second job
+```
 
 ---
 
@@ -210,7 +195,6 @@ gtimed tick                 # run every due pending job, then exit
 gtimed daemon
 gtimed install / uninstall
 gtimed completion install     # tab completion (also part of gtimed install)
-gtimed shim install | uninstall | status
 gtimed help
 gtimed version
 ```
@@ -219,7 +203,7 @@ Statuses: `pending` → `running` → `done` | `failed` | `cancelled` | `skipped
 
 Cron jobs that succeed go back to `pending`. One-shot jobs become `done`. Failed conditions before `--until` leave the job `pending` for the next tick.
 
-IDs are short (8 hex chars). `gtimed logs abc` works if that prefix is unique.
+IDs are short (8 hex chars). `gtimed logs abc` works if that prefix is unique. Rescheduling prints `updated <id>` instead of `scheduled <id>`.
 
 ---
 
@@ -233,7 +217,6 @@ gtimed --i<Tab>             # --in
 gtimed commit --w<Tab>      # --when
 gtimed --when c<Tab>        # clean / cmd:
 gtimed cancel <Tab>         # job ids
-git commit --i<Tab>         # --in  (bash / zsh / Git Bash)
 ```
 
 | Shell | How it is installed |
@@ -245,7 +228,7 @@ git commit --i<Tab>         # --in  (bash / zsh / Git Bash)
 
 Open a **new** terminal after install. Print a script without installing: `gtimed completion powershell`. Remove hooks: `gtimed completion uninstall`.
 
-On PowerShell, completion is for `gtimed` / `git-timed` only, so it does not replace posh-git. In bash/zsh the git wrapper **adds** `--in` / `--at` / `--when` next to git’s own completions.
+Completion is for `gtimed` only, so it does not replace posh-git or git’s own Tab completions.
 
 ---
 
@@ -273,25 +256,6 @@ Command Palette: **GTimed: Schedule Commit**, **Schedule Push**, **Open Source C
 
 ---
 
-## Git flags (`--in`, `--at`, `--when`, …)
-
-GTimed cannot patch `git.exe`. `gtimed install` writes a **PATH wrapper** (`~/.gtimed/shim`) and puts it first on your user PATH.
-
-- If argv contains `--in`, `--at`, `--cron`, `--when`, `--until`, `--dry-run`, `--now`, `--same-branch`, … → schedule the rest as a job.
-- Otherwise → real git (path stored in `~/.gtimed/real-git`).
-
-```bash
-git commit -m "Hello world" --in 20m
-git push --at "tomorrow 9am"
-git status                    # unchanged
-```
-
-Calling `git.exe` by full path bypasses the shim. Override the real binary with `GTIMED_REAL_GIT`.
-
-Shim-only (no Task Scheduler / crontab): `gtimed shim install`. Remove: `gtimed uninstall` or `gtimed shim uninstall`.
-
----
-
 ## Storage
 
 Default home: `~/.gtimed` (override with `GTIMED_HOME`).
@@ -299,11 +263,7 @@ Default home: `~/.gtimed` (override with `GTIMED_HOME`).
 ```text
 ~/.gtimed/
   jobs.json          # queue
-  real-git           # absolute path to real git.exe
   logs/<id>.log      # stdout/stderr + GTimed lines
-  shim/git.cmd       # Windows cmd/PowerShell
-  shim/git.ps1
-  shim/git           # Git Bash / macOS / Linux
 ```
 
 Each job records `command`, `cwd`, git root and branch at schedule time, schedule fields, and status.
@@ -339,7 +299,6 @@ Each job records `command`, `cwd`, git root and branch at schedule time, schedul
 | Variable | Purpose |
 | --- | --- |
 | `GTIMED_HOME` | Alternate data directory (useful in tests) |
-| `GTIMED_REAL_GIT` | Absolute path to real `git` for the shim |
 
 ---
 
@@ -356,14 +315,13 @@ Layout:
 
 ```text
 src/
-  index.ts         CLI entry (bin: gtimed / git-timed)
+  index.ts         CLI entry (bin: gtimed)
   parse.ts         Flag stripping, git-verb detection
   time.ts          Durations + natural-language dates
   conditions.ts    --when evaluators
   runner.ts        tick / execute / job builder
   store.ts         ~/.gtimed JSON store
   install.ts       schtasks / crontab
-  shim.ts          git PATH wrapper
   completion.ts    tab completion engine + shell scripts
   repo.ts          git status / stage for the UI
   ui-server.ts     localhost Source Control GUI
