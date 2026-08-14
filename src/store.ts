@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -203,7 +204,8 @@ export function upsertJob(job: Job): void {
 }
 
 export function newJobId(): string {
-  return crypto.randomUUID().slice(0, 8);
+  // Node 18 has no global crypto; Node 19+ does. node:crypto works on both.
+  return randomUUID().slice(0, 8);
 }
 
 /** Most recently run job, or most recently created if none have run. */
