@@ -110,6 +110,8 @@ gtimed abort             # every pending job
 | `--at "tomorrow 9am"` | local time, via chrono |
 | `--at 2026-08-14T09:00` | ISO |
 
+Printed times (list, logs header, “waiting …”) use this machine’s timezone. Jobs are still stored as UTC.
+
 Also: `min`, `minutes`, `hours`, `days`, `weeks`.
 
 ### Same command overwrites
@@ -132,7 +134,7 @@ gtimed commit --in 10m -m "b" # different message → second job
 ```text
 nothing due to run
 still waiting:
-  31bc95ae  git push  waiting 2026-08-14T10:45:30.827Z
+  31bc95ae  git push  waiting 2026-08-14 11:45:30 BST
 ```
 
 `list` uses the same wording: pending jobs say `waiting …`, finished ones say `ran …`.

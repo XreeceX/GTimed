@@ -88,9 +88,24 @@ test("parseWhen understands tomorrow 9am", () => {
   assert.equal(d.getMinutes(), 0);
 });
 
-test("formatWhen is ISO", () => {
+test("formatWhen uses the given timezone, not a UTC Z suffix", () => {
   const d = new Date("2026-08-14T10:45:30.827Z");
-  assert.equal(formatWhen(d), "2026-08-14T10:45:30.827Z");
+  const london = formatWhen(d, "Europe/London");
+  assert.match(london, /^2026-08-14 11:45:30 /);
+  assert.doesNotMatch(london, /T10:45:30/);
+  assert.doesNotMatch(london, /Z$/);
+  assert.match(london, /BST|GMT\+1/);
+  const utc = formatWhen(d, "UTC");
+  assert.match(utc, /^2026-08-14 10:45:30 /);
+  assert.match(utc, /UTC|GMT$/);
+});
+
+test("formatWhen accepts an ISO string and follows the machine timezone by default", () => {
+  const iso = "2026-08-14T10:45:30.827Z";
+  const text = formatWhen(iso);
+  assert.match(text, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \S/);
+  assert.doesNotMatch(text, /T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+  assert.equal(text, formatWhen(new Date(iso)));
 });
 
 test("minuteKey zeros seconds and ms", () => {

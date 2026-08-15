@@ -70,8 +70,27 @@ function looksLikeAbsoluteDate(input: string): boolean {
   return /\d{4}-\d{2}-\d{2}/.test(input) || /T\d{2}:/.test(input);
 }
 
-export function formatWhen(date: Date): string {
-  return date.toISOString();
+function part(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
+  return parts.find((p) => p.type === type)?.value ?? "";
+}
+
+/** Print a stored instant in the user's local timezone (or `timeZone` in tests). */
+export function formatWhen(input: Date | string, timeZone?: string): string {
+  const date = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(date.getTime())) return String(input);
+  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  }).formatToParts(date);
+  return `${part(parts, "year")}-${part(parts, "month")}-${part(parts, "day")} ${part(parts, "hour")}:${part(parts, "minute")}:${part(parts, "second")} ${part(parts, "timeZoneName")}`;
 }
 
 export function minuteKey(date = new Date()): string {

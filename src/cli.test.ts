@@ -60,6 +60,7 @@ test("gtimed push --in 20m schedules git push", () => {
   assert.match(r.stdout, /git push/);
   assert.match(r.stdout, /not run yet/);
   assert.doesNotMatch(r.stdout, /run a tick with/);
+  assert.doesNotMatch(r.stdout, /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
 });
 
 test("gtimed tick on a future job says nothing due and still waiting", () => {

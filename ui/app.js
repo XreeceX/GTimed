@@ -47,14 +47,32 @@ async function loadRepo() {
   }
 }
 
+function formatWhen(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const parts = new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  }).formatToParts(date);
+  const get = (type) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")} ${get("timeZoneName")}`;
+}
+
 function jobWhen(job) {
   if (job.status === "pending") {
     if (job.cron) return `waiting cron ${job.cron}`;
-    if (job.at) return `waiting ${job.at.replace("T", " ").slice(0, 19)}`;
+    if (job.at) return `waiting ${formatWhen(job.at)}`;
     if (job.when?.length) return `waiting when ${job.when.join(", ")}`;
     return "waiting";
   }
-  if (job.lastRunAt) return `${job.status} ${job.lastRunAt.replace("T", " ").slice(0, 19)}`;
+  if (job.lastRunAt) return `${job.status} ${formatWhen(job.lastRunAt)}`;
   return job.status;
 }
 

@@ -12,7 +12,7 @@ import {
   type Job,
   upsertJob,
 } from "./store.js";
-import { minuteKey, parseDurationMs, parseWhen } from "./time.js";
+import { formatWhen, minuteKey, parseDurationMs, parseWhen } from "./time.js";
 
 const require = createRequire(import.meta.url);
 
@@ -213,7 +213,7 @@ export async function tick(now = new Date()): Promise<Job[]> {
 
 export function nextHint(job: Job): string {
   if (job.cron) return `cron ${job.cron}`;
-  if (job.at) return job.at;
+  if (job.at) return formatWhen(job.at);
   if (job.when.length) return `when ${job.when.join(" & ")}`;
   return "soon";
 }
@@ -224,7 +224,7 @@ export function statusHint(job: Job): string {
     case "pending":
       return `waiting ${nextHint(job)}`;
     case "done":
-      return job.lastRunAt ? `ran ${job.lastRunAt}` : "done";
+      return job.lastRunAt ? `ran ${formatWhen(job.lastRunAt)}` : "done";
     case "failed":
       return job.lastError ? `failed ${job.lastError}` : "failed";
     case "cancelled":

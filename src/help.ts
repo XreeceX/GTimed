@@ -75,6 +75,7 @@ Rescheduling the same command in the same directory replaces the pending job
 with the new --in / --at / --cron / --when.
 
 Store: ~/.gtimed/jobs.json    Logs: ~/.gtimed/logs/<id>.log
+Printed times use your local timezone.
 `.trim();
 }
 

@@ -6,7 +6,7 @@ import path from "node:path";
 import { buildJob, dueByTime, enqueueJob, executeJob, nextHint, quoteWinCmdArg, statusHint, tick } from "./runner.js";
 import type { Job } from "./store.js";
 import { loadStore, upsertJob } from "./store.js";
-import { minuteKey } from "./time.js";
+import { formatWhen, minuteKey } from "./time.js";
 
 function isolatedHome(): string {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-home-"));
@@ -346,7 +346,7 @@ test("buildJob rejects invalid cron", () => {
 
 test("nextHint prefers cron then at then when", () => {
   assert.equal(nextHint(stubJob({ cron: "0 9 * * *" })), "cron 0 9 * * *");
-  assert.equal(nextHint(stubJob({ at: "2026-08-14T10:45:00.000Z" })), "2026-08-14T10:45:00.000Z");
+  assert.equal(nextHint(stubJob({ at: "2026-08-14T10:45:00.000Z" })), formatWhen("2026-08-14T10:45:00.000Z"));
   assert.equal(nextHint(stubJob({ when: ["clean", "ahead"] })), "when clean & ahead");
   assert.equal(nextHint(stubJob({})), "soon");
 });
@@ -354,6 +354,10 @@ test("nextHint prefers cron then at then when", () => {
 test("statusHint does not make a pending job look finished", () => {
   assert.match(statusHint(stubJob({ status: "pending", at: "2026-08-14T10:45:00.000Z" })), /^waiting /);
   assert.match(statusHint(stubJob({ status: "done", lastRunAt: "2026-08-14T10:45:00.000Z" })), /^ran /);
+  assert.equal(
+    statusHint(stubJob({ status: "done", lastRunAt: "2026-08-14T10:45:00.000Z" })),
+    `ran ${formatWhen("2026-08-14T10:45:00.000Z")}`,
+  );
   assert.equal(statusHint(stubJob({ status: "cancelled" })), "cancelled");
   assert.match(statusHint(stubJob({ status: "failed", lastError: "exit 1" })), /failed exit 1/);
   assert.equal(statusHint(stubJob({ status: "running" })), "running");
