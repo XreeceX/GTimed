@@ -70,27 +70,42 @@ function looksLikeAbsoluteDate(input: string): boolean {
   return /\d{4}-\d{2}-\d{2}/.test(input) || /T\d{2}:/.test(input);
 }
 
-function part(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
-  return parts.find((p) => p.type === type)?.value ?? "";
+const WHEN_FORMAT: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+  timeZoneName: "short",
+};
+
+const whenFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  let fmt = whenFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-GB", { ...WHEN_FORMAT, timeZone });
+    whenFormatters.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
+function pad2(value: string): string {
+  return value.length === 1 ? `0${value}` : value;
 }
 
 /** Print a stored instant in the user's local timezone (or `timeZone` in tests). */
 export function formatWhen(input: Date | string, timeZone?: string): string {
   const date = input instanceof Date ? input : new Date(input);
   if (Number.isNaN(date.getTime())) return String(input);
-  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-    timeZoneName: "short",
-  }).formatToParts(date);
-  return `${part(parts, "year")}-${part(parts, "month")}-${part(parts, "day")} ${part(parts, "hour")}:${part(parts, "minute")}:${part(parts, "second")} ${part(parts, "timeZoneName")}`;
+  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+  const bag: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
+  for (const p of formatterFor(tz).formatToParts(date)) {
+    bag[p.type] = p.value;
+  }
+  return `${bag.year}-${pad2(bag.month ?? "")}-${pad2(bag.day ?? "")} ${pad2(bag.hour ?? "")}:${pad2(bag.minute ?? "")}:${pad2(bag.second ?? "")} ${bag.timeZoneName || tz}`;
 }
 
 export function minuteKey(date = new Date()): string {

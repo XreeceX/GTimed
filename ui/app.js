@@ -51,7 +51,9 @@ function formatWhen(iso) {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  const parts = new Intl.DateTimeFormat(undefined, {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -62,7 +64,8 @@ function formatWhen(iso) {
     timeZoneName: "short",
   }).formatToParts(date);
   const get = (type) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")} ${get("timeZoneName")}`;
+  const pad = (s) => (s.length === 1 ? `0${s}` : s);
+  return `${get("year")}-${pad(get("month"))}-${pad(get("day"))} ${pad(get("hour"))}:${pad(get("minute"))}:${pad(get("second"))} ${get("timeZoneName") || tz}`;
 }
 
 function jobWhen(job) {

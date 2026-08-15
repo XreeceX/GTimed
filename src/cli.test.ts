@@ -70,6 +70,8 @@ test("gtimed tick on a future job says nothing due and still waiting", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /nothing due to run/);
   assert.match(r.stdout, /still waiting:/);
+  assert.match(r.stdout, /waiting \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} /);
+  assert.doesNotMatch(r.stdout, /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
 });
 
 test("gtimed --tick is the same as tick", () => {
@@ -181,7 +183,9 @@ test("gtimed list marks pending jobs as waiting", () => {
   const r = runCli(home, ["list"]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /pending\s+waiting /);
+  assert.match(r.stdout, /pending\s+waiting \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} /);
   assert.doesNotMatch(r.stdout, /pending\s+ran /);
+  assert.doesNotMatch(r.stdout, /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
 });
 
 test("gtimed cancel with no id does not look like it cancelled", () => {

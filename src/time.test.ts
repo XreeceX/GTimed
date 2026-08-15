@@ -100,12 +100,43 @@ test("formatWhen uses the given timezone, not a UTC Z suffix", () => {
   assert.match(utc, /UTC|GMT$/);
 });
 
+test("formatWhen follows DST: London winter stays GMT", () => {
+  const text = formatWhen("2026-01-14T10:45:30.827Z", "Europe/London");
+  assert.match(text, /^2026-01-14 10:45:30 /);
+  assert.match(text, /GMT/);
+  assert.doesNotMatch(text, /BST/);
+});
+
+test("formatWhen is not hardcoded to the UK", () => {
+  const ny = formatWhen("2026-08-14T10:45:30.827Z", "America/New_York");
+  assert.match(ny, /^2026-08-14 06:45:30 /);
+  assert.match(ny, /EDT|GMT.4/);
+});
+
+test("formatWhen pads midnight after a UTC day rolls over", () => {
+  const text = formatWhen("2026-08-14T23:00:00.000Z", "Europe/London");
+  assert.equal(text.slice(0, 19), "2026-08-15 00:00:00");
+});
+
+test("formatWhen returns the original string when the date is invalid", () => {
+  assert.equal(formatWhen("not-a-date"), "not-a-date");
+  assert.equal(formatWhen(""), "");
+});
+
 test("formatWhen accepts an ISO string and follows the machine timezone by default", () => {
   const iso = "2026-08-14T10:45:30.827Z";
   const text = formatWhen(iso);
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   assert.match(text, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \S/);
   assert.doesNotMatch(text, /T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   assert.equal(text, formatWhen(new Date(iso)));
+  assert.equal(text, formatWhen(iso, tz));
+});
+
+test("formatWhen is stable when the formatter is reused", () => {
+  const iso = "2026-08-14T10:45:30.827Z";
+  assert.equal(formatWhen(iso, "UTC"), formatWhen(iso, "UTC"));
+  assert.equal(formatWhen(iso, "Europe/London"), formatWhen(iso, "Europe/London"));
 });
 
 test("minuteKey zeros seconds and ms", () => {

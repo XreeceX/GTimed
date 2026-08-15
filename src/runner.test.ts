@@ -351,8 +351,30 @@ test("nextHint prefers cron then at then when", () => {
   assert.equal(nextHint(stubJob({})), "soon");
 });
 
+test("enqueueJob stores UTC ISO even though nextHint is local", () => {
+  isolatedHome();
+  const { job } = enqueueJob({
+    command: ["git", "push"],
+    cwd: process.cwd(),
+    at: "2026-08-14T10:45:00.000Z",
+    when: [],
+    dryRun: true,
+    now: false,
+    sameBranch: false,
+  });
+  assert.equal(job.at, "2026-08-14T10:45:00.000Z");
+  const stored = JSON.parse(fs.readFileSync(path.join(process.env.GTIMED_HOME!, "jobs.json"), "utf8")) as {
+    jobs: { at?: string }[];
+  };
+  assert.equal(stored.jobs[0]?.at, "2026-08-14T10:45:00.000Z");
+  assert.equal(nextHint(job), formatWhen("2026-08-14T10:45:00.000Z"));
+  assert.doesNotMatch(nextHint(job), /T10:45:00/);
+});
+
 test("statusHint does not make a pending job look finished", () => {
-  assert.match(statusHint(stubJob({ status: "pending", at: "2026-08-14T10:45:00.000Z" })), /^waiting /);
+  const pending = stubJob({ status: "pending", at: "2026-08-14T10:45:00.000Z" });
+  assert.equal(statusHint(pending), `waiting ${formatWhen("2026-08-14T10:45:00.000Z")}`);
+  assert.doesNotMatch(statusHint(pending), /T10:45:00\.000Z/);
   assert.match(statusHint(stubJob({ status: "done", lastRunAt: "2026-08-14T10:45:00.000Z" })), /^ran /);
   assert.equal(
     statusHint(stubJob({ status: "done", lastRunAt: "2026-08-14T10:45:00.000Z" })),

@@ -5,7 +5,7 @@
 ### Run git later — without changing git
 
 [![CI](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml/badge.svg)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-219-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-234-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![node](https://img.shields.io/badge/node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 
@@ -336,7 +336,7 @@ Sleeping laptops don't fire until the next tick after wake. `--every` is stored 
 ```bash
 npm install
 npm run build
-npm test          # 219 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
+npm test          # 234 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
 npx tsx src/index.ts --help
 ```
 

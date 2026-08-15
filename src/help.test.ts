@@ -26,6 +26,7 @@ test("full help looks like a Unix usage page", () => {
   assert.match(text, /gtm push --at/);
   assert.match(text, /replaces the pending job/);
   assert.match(text, /gtimed --log/);
+  assert.match(text, /local timezone/);
   assert.doesNotMatch(text, /\bgt push\b/);
   assert.doesNotMatch(text, /or: gt /);
 });
