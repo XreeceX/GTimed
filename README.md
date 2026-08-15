@@ -5,7 +5,7 @@
 ### Run git later — without changing git
 
 [![CI](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml/badge.svg)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-241-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-248-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![node](https://img.shields.io/badge/node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 
@@ -27,7 +27,7 @@
 
 <p><code>git</code> stays normal. Delay flags live on <code>gtimed</code> only.</p>
 
-[Install](#install) · [Usage](#usage) · [Flags](#flags) · [Conditions](#conditions-when) · [Development](#development)
+[Install](#install) · [Usage](#usage) · [Flags](#flags) · [Conditions](#conditions) · [Development](#development)
 
 </div>
 
@@ -72,11 +72,11 @@ gtimed install
 
 `gtimed install` is a one-off on this machine:
 
-1. Puts `gtimed` on your user PATH.
-2. Runs a tick every minute (Task Scheduler on Windows, crontab elsewhere). The PC has to be on and awake.
+1. On Windows, adds npm's global folder to your user PATH so `gtimed` and `gtm` resolve.
+2. Runs a tick every minute (Task Scheduler on Windows, crontab on macOS/Linux). The PC has to be on and awake.
 3. Hooks tab completion.
 
-Uninstall: `gtimed uninstall`, then `npm unlink -g gtimed`.
+Uninstall: `gtimed uninstall`, then `npm uninstall -g gtimed`.
 
 ---
 
@@ -213,7 +213,7 @@ If a wrapped tool also uses `--to` / `--dry` / `--rt`, put `--` in front of that
 
 ---
 
-## Conditions (`--when`)
+## Conditions
 
 Every spec must pass. Checked in the job's `cwd` when it fires, not when you type it.
 
@@ -257,6 +257,7 @@ gtimed tick                 # also: --tick
 gtimed daemon               # also: dm  (tick every 15s in this terminal)
 gtimed install / uninstall
 gtimed completion install
+gtimed completion uninstall
 gtimed ui
 gtimed help                 # also: -h, --help
 gtimed version              # also: -V, --version
@@ -336,7 +337,7 @@ Sleeping laptops don't fire until the next tick after wake. `--every` is stored 
 ```bash
 npm install
 npm run build
-npm test          # 241 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
+npm test          # 248 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
 npx tsx src/index.ts --help
 ```
 
