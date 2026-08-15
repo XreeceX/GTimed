@@ -136,16 +136,44 @@ function download(url, dest) {
   });
 }
 
-function extractTarGz(archive, dest) {
+/** Windows GNU tar (Git Bash) treats `C:\\...` as a remote host named C. */
+export function tarBin() {
+  if (process.platform === "win32") {
+    const root = process.env.SystemRoot || "C:\\Windows";
+    for (const dir of ["System32", "Sysnative"]) {
+      const candidate = path.join(root, dir, "tar.exe");
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return "tar";
+}
+
+export function tarArchiveArg(archive, dest) {
+  const absArchive = path.resolve(archive);
+  const absDest = path.resolve(dest);
+  const rel = path.relative(absDest, absArchive);
+  if (rel && !path.isAbsolute(rel) && !rel.includes(":")) {
+    return rel.split(path.sep).join("/");
+  }
+  const copy = path.join(absDest, "gtimed-download.tar.gz");
+  fs.copyFileSync(absArchive, copy);
+  return "gtimed-download.tar.gz";
+}
+
+export function extractTarGz(archive, dest) {
   fs.mkdirSync(dest, { recursive: true });
-  const r = spawnSync("tar", ["-xzf", archive, "-C", dest], {
+  const arg = tarArchiveArg(archive, dest);
+  const r = spawnSync(tarBin(), ["-xzf", arg], {
+    cwd: path.resolve(dest),
     encoding: "utf8",
     windowsHide: true,
   });
   if ((r.status ?? 1) !== 0) {
-    throw new Error(r.stderr || r.stdout || "tar failed — Windows 10+, macOS, and Linux all ship tar");
+    throw new Error(
+      `${(r.stderr || r.stdout || "tar failed").trim()} — Windows 10+, macOS, and Linux all ship tar`,
+    );
   }
-  const names = fs.readdirSync(dest);
+  const names = fs.readdirSync(dest).filter((name) => name !== "gtimed-download.tar.gz");
   const folder = names.find((name) => fs.statSync(path.join(dest, name)).isDirectory());
   if (!folder) throw new Error("archive did not contain a folder");
   return path.join(dest, folder);
@@ -173,6 +201,9 @@ export async function install(opts) {
     const url = githubArchiveUrl(opts.repo, opts.ref);
     console.log(`Downloading ${url}`);
     await download(url, archive);
+    if (!fs.existsSync(archive) || fs.statSync(archive).size < 100) {
+      throw new Error(`download was empty: ${url}`);
+    }
     source = extractTarGz(archive, path.join(tmp, "unpack"));
   }
 

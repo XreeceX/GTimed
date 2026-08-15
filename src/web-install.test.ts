@@ -12,12 +12,15 @@ import {
   assertNodeVersion,
   bootstrapUrl,
   buildPlan,
+  extractTarGz,
   formatPlan,
   githubArchiveUrl,
   install,
   installHelp,
   parseInstallArgs,
   parseNodeMajor,
+  tarArchiveArg,
+  tarBin,
 } from "../scripts/install.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -155,4 +158,88 @@ test("README shows the copy-paste install lines", () => {
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   assert.match(readme, /irm https:\/\/raw\.githubusercontent\.com\/XreeceX\/GTimed\/master\/scripts\/install\.ps1 \| iex/);
   assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/XreeceX\/GTimed\/master\/scripts\/install\.sh \| sh/);
+  assert.match(readme, /not Git Bash/);
+});
+
+test("install.mjs extracts with cwd dest, not tar -C on a drive path", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "install.mjs"), "utf8");
+  assert.match(src, /cwd: path\.resolve\(dest\)/);
+  assert.doesNotMatch(src, /\["-xzf", archive, "-C"/);
+});
+
+test("tarArchiveArg is relative and has no drive letter", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-tararg-"));
+  const archive = path.join(tmp, "a.tar.gz");
+  fs.writeFileSync(archive, "x");
+  const dest = path.join(tmp, "unpack");
+  fs.mkdirSync(dest);
+  const arg = tarArchiveArg(archive, dest);
+  assert.equal(arg.includes(":"), false);
+  assert.doesNotMatch(arg, /^[A-Za-z]:/);
+  assert.equal(path.isAbsolute(arg), false);
+});
+
+function packSampleArchive(tmp: string): string {
+  const folder = path.join(tmp, "GTimed-master");
+  fs.mkdirSync(path.join(folder, "src"), { recursive: true });
+  fs.writeFileSync(path.join(folder, "package.json"), '{"name":"gtimed"}\n');
+  fs.writeFileSync(path.join(folder, "src", "index.js"), "ok\n");
+  const pack = spawnSync(tarBin(), ["-czf", "gtimed.tar.gz", "GTimed-master"], {
+    cwd: tmp,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  assert.equal(pack.status, 0, pack.stderr || pack.stdout);
+  const archive = path.join(tmp, "gtimed.tar.gz");
+  assert.equal(fs.existsSync(archive), true);
+  assert.ok(fs.statSync(archive).size > 50);
+  return archive;
+}
+
+test("extractTarGz unpacks a gzip tarball without a C: host error", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-tar-"));
+  const archive = packSampleArchive(tmp);
+  const dest = path.join(tmp, "unpack");
+  const out = extractTarGz(archive, dest);
+  assert.equal(path.basename(out), "GTimed-master");
+  assert.match(fs.readFileSync(path.join(out, "package.json"), "utf8"), /gtimed/);
+  assert.equal(fs.readFileSync(path.join(out, "src", "index.js"), "utf8"), "ok\n");
+});
+
+test("extractTarGz accepts an absolute Windows-style archive path", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-tarabs-"));
+  const archive = packSampleArchive(tmp);
+  const dest = path.join(tmp, "unpack");
+  const out = extractTarGz(path.resolve(archive), path.resolve(dest));
+  assert.equal(fs.existsSync(path.join(out, "package.json")), true);
+});
+
+test("extractTarGz fails on a missing archive", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-tarmiss-"));
+  assert.throws(() => extractTarGz(path.join(tmp, "nope.tar.gz"), path.join(tmp, "out")));
+});
+
+test("PATH tar with -C drive letter is the Windows one-line install bug", () => {
+  if (process.platform !== "win32") return;
+  const ver = spawnSync("tar", ["--version"], { encoding: "utf8", windowsHide: true });
+  if (!`${ver.stdout}${ver.stderr}`.includes("GNU tar")) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-targnu-"));
+  const archive = packSampleArchive(tmp);
+  const dest = path.join(tmp, "unpack");
+  fs.mkdirSync(dest);
+  const r = spawnSync("tar", ["-xzf", archive, "-C", dest], { encoding: "utf8", windowsHide: true });
+  assert.notEqual(r.status, 0);
+  assert.match(`${r.stderr}${r.stdout}`, /Cannot connect to C:/);
+  const out = extractTarGz(archive, dest);
+  assert.equal(fs.existsSync(path.join(out, "package.json")), true);
+});
+
+test("tarBin prefers Windows System32 tar on this OS", () => {
+  const bin = tarBin();
+  if (process.platform === "win32") {
+    assert.match(bin.replaceAll("/", "\\"), /\\tar\.exe$/i);
+    assert.equal(fs.existsSync(bin), true);
+  } else {
+    assert.equal(bin, "tar");
+  }
 });
