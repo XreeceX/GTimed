@@ -9,37 +9,274 @@ import {
   parseGithubRemote,
   whenForcesLocal,
 } from "./cloud.js";
-import { fireGithubJob } from "../cloud/lib/github.js";
-import { createTestDeps, handleRequest, type TestDeps } from "../cloud/lib/app.js";
-import type { CloudJob } from "../cloud/lib/types.js";
 import { git, gitRepo, isolatedHome, runCli, runCliAsync } from "./test-util.js";
 
-async function listen(deps: TestDeps = createTestDeps()) {
-  const server = http.createServer((req, res) => {
+type FakeJob = {
+  id: string;
+  createdAt: string;
+  command: string[];
+  cwd: string;
+  when: string[];
+  status: string;
+  kind: string;
+  machineId?: string;
+  at?: string;
+  cron?: string;
+  until?: string;
+  logFile?: string;
+  lastError?: string;
+  [key: string]: unknown;
+};
+
+type FakeState = {
+  sessions: Map<string, { userId: string; githubUser: string }>;
+  jobs: Map<string, FakeJob[]>;
+  fireCalls: string[];
+};
+
+function json(res: http.ServerResponse, status: number, body: unknown) {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(body));
+}
+
+function sameCwd(a: string, b: string): boolean {
+  return a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
+}
+
+function commandsEqual(a: string[] | undefined, b: string[] | undefined): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  return left.length === right.length && left.every((x, i) => x === right[i]);
+}
+
+function matchJob(jobs: FakeJob[], id: string): FakeJob | undefined {
+  const prefix = id.toLowerCase();
+  const matches = jobs.filter((j) => j.id === id || j.id.toLowerCase().startsWith(prefix));
+  return matches.length === 1 ? matches[0] : matches.find((j) => j.id === id);
+}
+
+function dueAt(job: FakeJob, now: Date): boolean {
+  if (job.cron) return true;
+  if (job.at) return now.getTime() >= Date.parse(job.at);
+  return true;
+}
+
+function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c as Buffer));
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        const v = JSON.parse(raw) as unknown;
+        resolve(v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function bearer(req: http.IncomingMessage): string | undefined {
+  const auth = String(req.headers.authorization ?? "");
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  return m?.[1]?.trim() || undefined;
+}
+
+/** Protocol fake of the hosted API. No GTimed-cloud imports. */
+function createFakeApi(): { state: FakeState; handle: http.RequestListener } {
+  const state: FakeState = {
+    sessions: new Map(),
+    jobs: new Map(),
+    fireCalls: [],
+  };
+
+  const handle: http.RequestListener = (req, res) => {
     void (async () => {
       try {
         const host = String(req.headers.host ?? "127.0.0.1");
         const url = new URL(req.url ?? "/", `http://${host}`);
-        const chunks: Buffer[] = [];
-        for await (const chunk of req) chunks.push(chunk as Buffer);
-        const result = await handleRequest(
-          {
-            method: req.method ?? "GET",
-            pathname: url.pathname,
-            search: url.search.startsWith("?") ? url.search.slice(1) : url.search,
-            headers: req.headers,
-            body: Buffer.concat(chunks).toString("utf8"),
-          },
-          deps,
-        );
-        res.writeHead(result.status, result.headers);
-        res.end(result.body);
+        const method = (req.method ?? "GET").toUpperCase();
+        const pathname = url.pathname.replace(/\/+$/, "") || "/";
+        const body = await readBody(req);
+
+        if (method === "GET" && pathname === "/api/auth/config") {
+          json(res, 200, {});
+          return;
+        }
+
+        if (method === "POST" && pathname === "/api/auth/login") {
+          const access =
+            (typeof body.githubAccessToken === "string" && body.githubAccessToken) ||
+            (typeof body.token === "string" && body.token) ||
+            "";
+          if (!access) {
+            json(res, 400, { error: "missing githubAccessToken" });
+            return;
+          }
+          const token = `gtm_${state.sessions.size + 1}_session`;
+          state.sessions.set(token, { userId: "tester", githubUser: "tester" });
+          json(res, 200, { token, githubUser: "tester" });
+          return;
+        }
+
+        const session = state.sessions.get(bearer(req) ?? "");
+        if (!session) {
+          json(res, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const jobs = state.jobs.get(session.userId) ?? [];
+        const save = () => state.jobs.set(session.userId, jobs);
+        const machine = String(req.headers["x-gtimed-machine"] ?? "");
+
+        if (method === "GET" && pathname === "/api/jobs") {
+          let out = jobs.slice();
+          const kind = url.searchParams.get("kind");
+          const status = url.searchParams.get("status");
+          const machineQ = url.searchParams.get("machine") ?? machine;
+          if (kind) out = out.filter((j) => (j.kind ?? "local") === kind);
+          if (status) out = out.filter((j) => j.status === status);
+          if (machineQ && kind === "local") out = out.filter((j) => j.machineId === machineQ);
+          json(res, 200, { jobs: out });
+          return;
+        }
+
+        if (method === "POST" && pathname === "/api/jobs") {
+          const job = { ...(body.job as FakeJob) };
+          if (!job?.id || !Array.isArray(job.command)) {
+            json(res, 400, { error: "invalid job" });
+            return;
+          }
+          if (machine && !job.machineId) job.machineId = machine;
+          if (!job.kind) job.kind = job.github ? "github" : "local";
+          job.status = job.status || "pending";
+          job.createdAt = job.createdAt || new Date().toISOString();
+          const existing = jobs.find(
+            (j) => j.status === "pending" && commandsEqual(j.command, job.command) && sameCwd(j.cwd, job.cwd),
+          );
+          let replaced = false;
+          if (existing) {
+            job.id = existing.id;
+            replaced = true;
+          }
+          const idx = jobs.findIndex((j) => j.id === job.id);
+          if (idx >= 0) jobs[idx] = job;
+          else jobs.push(job);
+          save();
+          json(res, 200, { job, replaced });
+          return;
+        }
+
+        if (method === "POST" && pathname === "/api/jobs/cancel") {
+          const which = String(body.which ?? "");
+          const pending = jobs.filter((j) => j.status === "pending");
+          let targets: FakeJob[] = [];
+          if (which === "all") targets = pending;
+          else if (which === "last") {
+            let last: FakeJob | undefined;
+            for (const j of pending) {
+              if (!last || j.createdAt.localeCompare(last.createdAt) > 0) last = j;
+            }
+            if (last) targets = [last];
+          } else {
+            const hit = matchJob(pending, which);
+            if (hit) targets = [hit];
+          }
+          for (const job of targets) job.status = "cancelled";
+          save();
+          json(res, 200, { jobs: targets });
+          return;
+        }
+
+        if (method === "POST" && pathname === "/api/jobs/claim") {
+          const id = String(body.id ?? "");
+          const job = matchJob(jobs, id);
+          if (!job) {
+            json(res, 404, { error: "unknown job" });
+            return;
+          }
+          if (job.kind === "github") {
+            json(res, 409, { error: "github jobs are not claimed locally" });
+            return;
+          }
+          if (job.status !== "pending") {
+            json(res, 409, { error: "job is not pending" });
+            return;
+          }
+          if (job.machineId && machine && job.machineId !== machine) {
+            json(res, 409, { error: "job belongs to another machine" });
+            return;
+          }
+          if (!dueAt(job, new Date())) {
+            json(res, 409, { error: "job is not due" });
+            return;
+          }
+          job.status = "running";
+          save();
+          json(res, 200, { job });
+          return;
+        }
+
+        const jobFire = /^\/api\/jobs\/([^/]+)\/fire$/.exec(pathname);
+        if (method === "POST" && jobFire?.[1]) {
+          const job = matchJob(jobs, decodeURIComponent(jobFire[1]));
+          if (!job) {
+            json(res, 404, { error: "unknown job" });
+            return;
+          }
+          state.fireCalls.push(job.id);
+          job.status = "done";
+          save();
+          json(res, 200, { job });
+          return;
+        }
+
+        const jobResult = /^\/api\/jobs\/([^/]+)\/result$/.exec(pathname);
+        if (method === "POST" && jobResult?.[1]) {
+          const id = decodeURIComponent(jobResult[1]);
+          const idx = jobs.findIndex((j) => j.id === id || j.id.startsWith(id));
+          if (idx < 0) {
+            json(res, 404, { error: "unknown job" });
+            return;
+          }
+          const prev = jobs[idx]!;
+          const patch = (body.job ?? body) as FakeJob;
+          jobs[idx] = { ...prev, ...patch, id: prev.id, kind: prev.kind, machineId: prev.machineId };
+          save();
+          json(res, 200, { job: jobs[idx] });
+          return;
+        }
+
+        const jobGet = /^\/api\/jobs\/([^/]+)$/.exec(pathname);
+        if (method === "GET" && jobGet?.[1]) {
+          const job = matchJob(jobs, decodeURIComponent(jobGet[1]));
+          if (!job) {
+            json(res, 404, { error: "unknown job" });
+            return;
+          }
+          json(res, 200, { job });
+          return;
+        }
+
+        json(res, 404, { error: "not found" });
       } catch (err) {
-        res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        json(res, 500, { error: err instanceof Error ? err.message : String(err) });
       }
     })();
-  });
+  };
+
+  return { state, handle };
+}
+
+async function listen() {
+  const { state, handle } = createFakeApi();
+  const server = http.createServer(handle);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());
@@ -49,7 +286,7 @@ async function listen(deps: TestDeps = createTestDeps()) {
   const url = `http://127.0.0.1:${addr.port}`;
   const probe = await fetch(`${url}/api/auth/config`);
   assert.equal(probe.ok, true, await probe.text());
-  return { server, deps, url };
+  return { server, state, url };
 }
 
 async function loginHome(url: string, token = "ghp_secret_test_token") {
@@ -172,7 +409,7 @@ test("cloud on posts commit and push and does not write jobs.json", async () => 
 });
 
 test("local tick claims due local jobs and never executes github-kind", async () => {
-  const { server, url, deps } = await listen();
+  const { server, url, state } = await listen();
   try {
     const home = await loginHome(url);
     const repo = gitRepo();
@@ -192,7 +429,7 @@ test("local tick claims due local jobs and never executes github-kind", async ()
     assert.match(tick.stdout, /ran 1 job/);
     assert.match(tick.stdout, /still waiting:/);
     assert.match(tick.stdout, /git push/);
-    assert.equal(deps.githubCalls.filter((c) => c.method === "PATCH").length, 0);
+    assert.equal(state.fireCalls.length, 0);
   } finally {
     server.close();
   }
@@ -257,411 +494,6 @@ test("help and nextHint never print the cloud token", () => {
   assert.equal(topic.status, 0, topic.stderr);
   assert.match(topic.stdout, /Usage: gtimed cloud/);
   assert.doesNotMatch(topic.stdout, /ghp_/);
-});
-
-test("github fire uses the GitHub API mapping, not a shell", async () => {
-  const deps = createTestDeps();
-  const login = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/auth/login",
-      headers: {},
-      body: JSON.stringify({ githubAccessToken: "pat" }),
-    },
-    deps,
-  );
-  const { token } = JSON.parse(login.body) as { token: string };
-  const created = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs",
-      headers: { authorization: `Bearer ${token}`, "x-gtimed-machine": "m1" },
-      body: JSON.stringify({
-        job: {
-          id: "abcd1234",
-          createdAt: new Date().toISOString(),
-          command: ["git", "push"],
-          cwd: "/tmp",
-          when: [],
-          everyMs: 0,
-          timeoutMs: 0,
-          retry: 0,
-          attempts: 0,
-          requireSameBranch: false,
-          dryRun: false,
-          status: "pending",
-          logFile: "abcd1234.log",
-          kind: "github",
-          at: "2020-01-01T00:00:00.000Z",
-          github: {
-            owner: "acme",
-            repo: "demo",
-            sha: "deadbeef",
-            action: "push",
-            branch: "main",
-            holdingRef: "refs/gtimed/abcd1234",
-          },
-        },
-      }),
-    },
-    deps,
-  );
-  assert.equal(created.status, 200, created.body);
-  const fired = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs/abcd1234/fire",
-      headers: { authorization: `Bearer ${token}` },
-      body: "{}",
-    },
-    deps,
-  );
-  assert.equal(fired.status, 200, fired.body);
-  const job = (JSON.parse(fired.body) as { job: { status: string; lastError?: string } }).job;
-  assert.equal(job.status, "done", job.lastError);
-  assert.ok(deps.githubCalls.some((c) => c.method === "PATCH" && c.path.includes("/git/refs/heads/main")));
-  assert.ok(!deps.githubCalls.some((c) => String(c.body ?? "").includes("child_process")));
-});
-
-test("QStash-style wake is scheduled for github jobs", async () => {
-  const wakes: { jobId: string; dueAt: string }[] = [];
-  const deps = createTestDeps({
-    wake: {
-      async schedule(opts) {
-        wakes.push({ jobId: opts.jobId, dueAt: opts.dueAt });
-      },
-    },
-  });
-  const login = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/auth/login",
-      headers: {},
-      body: JSON.stringify({ githubAccessToken: "pat" }),
-    },
-    deps,
-  );
-  const { token } = JSON.parse(login.body) as { token: string };
-  const created = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs",
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        job: {
-          id: "wake0001",
-          createdAt: new Date().toISOString(),
-          command: ["git", "push"],
-          cwd: "/tmp",
-          when: [],
-          everyMs: 0,
-          timeoutMs: 0,
-          retry: 0,
-          attempts: 0,
-          requireSameBranch: false,
-          dryRun: false,
-          status: "pending",
-          logFile: "w.log",
-          kind: "github",
-          at: "2026-08-18T12:00:00.000Z",
-          github: { owner: "acme", repo: "demo", sha: "abc", action: "push", branch: "main" },
-        },
-      }),
-    },
-    deps,
-  );
-  assert.equal(created.status, 200, created.body);
-  assert.equal(wakes.length, 1);
-  assert.equal(wakes[0]?.jobId, "wake0001");
-});
-
-test("claim refuses github-kind jobs", async () => {
-  const deps = createTestDeps();
-  const login = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/auth/login",
-      headers: {},
-      body: JSON.stringify({ githubAccessToken: "pat" }),
-    },
-    deps,
-  );
-  const { token } = JSON.parse(login.body) as { token: string };
-  await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs",
-      headers: { authorization: `Bearer ${token}`, "x-gtimed-machine": "m1" },
-      body: JSON.stringify({
-        job: {
-          id: "gh000001",
-          createdAt: new Date().toISOString(),
-          command: ["git", "push"],
-          cwd: "/tmp",
-          when: [],
-          everyMs: 0,
-          timeoutMs: 0,
-          retry: 0,
-          attempts: 0,
-          requireSameBranch: false,
-          dryRun: false,
-          status: "pending",
-          logFile: "g.log",
-          kind: "github",
-          machineId: "m1",
-          at: "2020-01-01T00:00:00.000Z",
-          github: { owner: "acme", repo: "demo", sha: "abc", action: "push", branch: "main" },
-        },
-      }),
-    },
-    deps,
-  );
-  const claimed = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs/claim",
-      headers: { authorization: `Bearer ${token}`, "x-gtimed-machine": "m1" },
-      body: JSON.stringify({ id: "gh000001" }),
-    },
-    deps,
-  );
-  assert.equal(claimed.status, 409);
-});
-
-function jobStub(partial: Record<string, unknown> = {}): CloudJob {
-  return {
-    id: "job00001",
-    createdAt: new Date().toISOString(),
-    command: ["git", "push"],
-    cwd: "/tmp",
-    when: [],
-    everyMs: 0,
-    timeoutMs: 0,
-    retry: 0,
-    attempts: 0,
-    requireSameBranch: false,
-    dryRun: false,
-    status: "pending",
-    logFile: "j.log",
-    kind: "github",
-    ...partial,
-  } as CloudJob;
-}
-
-async function apiLogin(deps: TestDeps = createTestDeps()) {
-  const login = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/auth/login",
-      headers: {},
-      body: JSON.stringify({ githubAccessToken: "pat" }),
-    },
-    deps,
-  );
-  const { token } = JSON.parse(login.body) as { token: string };
-  return {
-    deps,
-    token,
-    headers: { authorization: `Bearer ${token}`, "x-gtimed-machine": "m1" } as Record<string, string>,
-  };
-}
-
-test("fireGithubJob opens a PR through the GitHub API", async () => {
-  const deps = createTestDeps();
-  const job = await fireGithubJob(
-    jobStub({
-      command: ["gh", "pr", "create", "--title", "hi"],
-      github: {
-        owner: "acme",
-        repo: "demo",
-        sha: "abc",
-        action: "pr",
-        holdingRef: "refs/gtimed/job00001",
-        prTitle: "hi",
-        prBase: "main",
-      },
-    }),
-    deps.githubFetch,
-  );
-  assert.equal(job.status, "done");
-  assert.ok(deps.githubCalls.some((c) => c.method === "POST" && c.path.endsWith("/pulls")));
-  assert.ok(deps.githubCalls.some((c) => c.method === "DELETE" && c.path.includes("/git/refs/gtimed/")));
-});
-
-test("fireGithubJob creates a tag ref", async () => {
-  const deps = createTestDeps();
-  const job = await fireGithubJob(
-    jobStub({
-      github: { owner: "acme", repo: "demo", sha: "abc", action: "tag", tagName: "v1.2.3" },
-    }),
-    deps.githubFetch,
-  );
-  assert.equal(job.status, "done");
-  const create = deps.githubCalls.find((c) => c.method === "POST" && c.path.endsWith("/git/refs"));
-  assert.deepEqual(create?.body, { ref: "refs/tags/v1.2.3", sha: "abc" });
-});
-
-test("fireGithubJob dry-run does not call GitHub", async () => {
-  const deps = createTestDeps();
-  const job = await fireGithubJob(
-    jobStub({
-      dryRun: true,
-      github: { owner: "acme", repo: "demo", sha: "abc", action: "push", branch: "main" },
-    }),
-    deps.githubFetch,
-  );
-  assert.equal(job.status, "done");
-  assert.equal(deps.githubCalls.length, 0);
-  assert.match(job.logText ?? "", /dry-run/);
-});
-
-test("fireGithubJob fails without a github target", async () => {
-  const deps = createTestDeps();
-  const job = await fireGithubJob(jobStub({ github: undefined, kind: "github" }), deps.githubFetch);
-  assert.equal(job.status, "failed");
-  assert.match(job.lastError ?? "", /missing github target/);
-});
-
-test("fireGithubJob stays pending when remote-ok fails", async () => {
-  const job = await fireGithubJob(
-    jobStub({
-      when: ["remote-ok"],
-      github: { owner: "acme", repo: "demo", sha: "abc", action: "push", branch: "main" },
-    }),
-    async () => ({ status: 503, json: {} }),
-  );
-  assert.equal(job.status, "pending");
-  assert.match(job.lastError ?? "", /not reachable/);
-});
-
-test("API rejects unauthenticated list", async () => {
-  const res = await handleRequest(
-    { method: "GET", pathname: "/api/jobs", headers: {}, body: "" },
-    createTestDeps(),
-  );
-  assert.equal(res.status, 401);
-});
-
-test("API get, duplicate replace, and cancel last", async () => {
-  const { deps, headers } = await apiLogin();
-  const first = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs",
-      headers,
-      body: JSON.stringify({
-        job: jobStub({ id: "aaaa1111", command: ["git", "push"], cwd: "/repo", at: "2026-08-18T12:00:00.000Z" }),
-      }),
-    },
-    deps,
-  );
-  assert.equal(first.status, 200, first.body);
-  const second = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs",
-      headers,
-      body: JSON.stringify({
-        job: jobStub({ id: "bbbb2222", command: ["git", "push"], cwd: "/repo", at: "2026-08-18T13:00:00.000Z" }),
-      }),
-    },
-    deps,
-  );
-  const body = JSON.parse(second.body) as { replaced: boolean; job: { id: string; at?: string } };
-  assert.equal(body.replaced, true);
-  assert.equal(body.job.id, "aaaa1111");
-  assert.equal(body.job.at, "2026-08-18T13:00:00.000Z");
-
-  const got = await handleRequest(
-    { method: "GET", pathname: "/api/jobs/aaaa1111", headers, body: "" },
-    deps,
-  );
-  assert.equal(got.status, 200);
-
-  const cancelled = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs/cancel",
-      headers,
-      body: JSON.stringify({ which: "last" }),
-    },
-    deps,
-  );
-  assert.equal(cancelled.status, 200);
-  const jobs = (JSON.parse(cancelled.body) as { jobs: { id: string; status: string }[] }).jobs;
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0]?.status, "cancelled");
-});
-
-test("claim refuses a job owned by another machine", async () => {
-  const { deps, token } = await apiLogin();
-  await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs",
-      headers: { authorization: `Bearer ${token}`, "x-gtimed-machine": "laptop-a" },
-      body: JSON.stringify({
-        job: jobStub({
-          id: "loc00001",
-          kind: "local",
-          machineId: "laptop-a",
-          command: ["git", "status"],
-          at: "2020-01-01T00:00:00.000Z",
-        }),
-      }),
-    },
-    deps,
-  );
-  const claimed = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs/claim",
-      headers: { authorization: `Bearer ${token}`, "x-gtimed-machine": "laptop-b" },
-      body: JSON.stringify({ id: "loc00001" }),
-    },
-    deps,
-  );
-  assert.equal(claimed.status, 409);
-});
-
-test("internal fire accepts the fire secret", async () => {
-  const deps = createTestDeps({ fireSecret: "s3cret" });
-  const { token } = await apiLogin(deps);
-  await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/jobs",
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        job: jobStub({
-          id: "fire0001",
-          github: { owner: "acme", repo: "demo", sha: "abc", action: "push", branch: "main" },
-        }),
-      }),
-    },
-    deps,
-  );
-  const denied = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/internal/fire",
-      headers: {},
-      body: JSON.stringify({ userId: "tester", jobId: "fire0001" }),
-    },
-    deps,
-  );
-  assert.equal(denied.status, 401);
-  const ok = await handleRequest(
-    {
-      method: "POST",
-      pathname: "/api/internal/fire",
-      headers: { authorization: "Bearer s3cret" },
-      body: JSON.stringify({ userId: "tester", jobId: "fire0001" }),
-    },
-    deps,
-  );
-  assert.equal(ok.status, 200, ok.body);
-  assert.equal((JSON.parse(ok.body) as { job: { status: string } }).job.status, "done");
 });
 
 test("cloud logout drops the token file", async () => {

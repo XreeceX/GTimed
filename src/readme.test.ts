@@ -54,8 +54,6 @@ test("README points at files that exist in this repo", () => {
     "vscode-extension/extension.js",
     "ui/index.html",
     "ui/app.js",
-    "cloud/README.md",
-    "cloud/api/[...path].ts",
   ]) {
     assert.equal(fs.existsSync(path.join(root, rel)), true, rel);
   }

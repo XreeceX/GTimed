@@ -1,8 +1,0 @@
-{
-  "name": "gtimed-cloud",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "node": ">=18"
-  }
-}
