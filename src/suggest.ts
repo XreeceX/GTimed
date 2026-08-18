@@ -18,7 +18,7 @@ const COMMANDS = [
   ...GIT_VERBS,
 ];
 
-const EXTRA_OPTIONS = new Set(["--all", "-a", "--port", "--no-open"]);
+const EXTRA_OPTIONS = new Set(["--all", "-a", "--port", "--no-open", "--token", "--url"]);
 const OPTIONS = [...Object.keys(FLAGS), "--help", "--version", "--log", "--tick"];
 
 export function distance(a: string, b: string): number {

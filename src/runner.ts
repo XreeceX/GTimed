@@ -1,6 +1,16 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import fs from "node:fs";
+import {
+  cloudClaim,
+  cloudEnqueue,
+  cloudFire,
+  cloudPendingLocal,
+  cloudResult,
+  isCloudOn,
+  loadCloudConfig,
+  prepareGithubTarget,
+} from "./cloud.js";
 import { evalAllConditions, repoMeta } from "./conditions.js";
 import {
   findPendingDuplicate,
@@ -113,11 +123,23 @@ function runCommand(job: Job): Promise<{ code: number }> {
   });
 }
 
+async function persistJob(job: Job): Promise<void> {
+  if (isCloudOn()) {
+    await cloudResult(job);
+    return;
+  }
+  upsertJob(job);
+}
+
 export async function executeJob(job: Job): Promise<Job> {
+  if (isCloudOn() && job.kind === "github") {
+    return cloudFire(job.id);
+  }
+
   job.status = "running";
   job.lastRunAt = new Date().toISOString();
   job.attempts += 1;
-  upsertJob(job);
+  await persistJob(job);
 
   if (job.requireSameBranch && job.branch) {
     const meta = repoMeta(job.cwd);
@@ -125,7 +147,7 @@ export async function executeJob(job: Job): Promise<Job> {
       job.status = "skipped";
       job.lastError = `branch changed from ${job.branch} to ${meta.branch}`;
       logLine(job, job.lastError);
-      upsertJob(job);
+      await persistJob(job);
       return job;
     }
   }
@@ -135,7 +157,7 @@ export async function executeJob(job: Job): Promise<Job> {
     job.status = "pending";
     job.lastError = cond.detail;
     logLine(job, `condition not met: ${cond.detail}`);
-    upsertJob(job);
+    await persistJob(job);
     return job;
   }
 
@@ -162,11 +184,47 @@ export async function executeJob(job: Job): Promise<Job> {
     logLine(job, job.lastError);
   }
 
-  upsertJob(job);
+  await persistJob(job);
   return job;
 }
 
+async function tickCloud(now: Date): Promise<Job[]> {
+  const ran: Job[] = [];
+  const pending = await cloudPendingLocal();
+  for (const job of pending) {
+    if (job.kind === "github") continue;
+
+    if (expired(job, now)) {
+      job.status = "failed";
+      job.lastError = "deadline passed before conditions were met";
+      job.lastCheckedAt = now.toISOString();
+      logLine(job, job.lastError);
+      await persistJob(job);
+      continue;
+    }
+
+    if (!dueByTime(job, now)) continue;
+
+    if (job.when.length) {
+      const cond = evalAllConditions(job);
+      if (!cond.ok) {
+        job.lastError = cond.detail;
+        job.lastCheckedAt = now.toISOString();
+        await persistJob(job);
+        continue;
+      }
+    }
+
+    const claimed = await cloudClaim(job.id);
+    if (!claimed) continue;
+    ran.push(await executeJob(claimed));
+  }
+  return ran;
+}
+
 export async function tick(now = new Date()): Promise<Job[]> {
+  if (isCloudOn()) return tickCloud(now);
+
   const ran: Job[] = [];
   const store = loadStore();
   let dirty = false;
@@ -303,14 +361,35 @@ export function buildJob(opts: {
   return job;
 }
 
-/** Create or replace the pending job for this command in this directory. */
-export function enqueueJob(
+async function enqueueCloud(
   opts: Omit<Parameters<typeof buildJob>[0], "id"> & { id?: string },
-): { job: Job; replaced: boolean } {
+): Promise<{ job: Job; replaced: boolean; note?: string }> {
+  const cfg = loadCloudConfig();
+  const id = opts.id ?? newJobId();
+  const job = buildJob({ ...opts, id });
+  job.machineId = cfg?.machineId;
+  const prepared = prepareGithubTarget(job);
+  job.kind = prepared.kind;
+  job.github = prepared.github;
+  const saved = await cloudEnqueue(job);
+  logLine(
+    saved.job,
+    `${saved.replaced ? "updated" : "scheduled"}  ${nextHint(saved.job)}${saved.job.when.length ? ` if ${saved.job.when.join(" & ")}` : ""}`,
+  );
+  return { ...saved, note: prepared.note };
+}
+
+/** Create or replace the pending job for this command in this directory. */
+export async function enqueueJob(
+  opts: Omit<Parameters<typeof buildJob>[0], "id"> & { id?: string },
+): Promise<{ job: Job; replaced: boolean; note?: string }> {
+  if (isCloudOn()) return enqueueCloud(opts);
+
   const store = loadStore();
   const existing = findPendingDuplicate(opts.command, opts.cwd, store.jobs);
   const id = existing?.id ?? opts.id ?? newJobId();
   const job = buildJob({ ...opts, id });
+  job.kind = "local";
   putJobCancellingDuplicates(job, store);
   const replaced = Boolean(existing);
   logLine(

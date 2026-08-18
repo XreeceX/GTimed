@@ -4,7 +4,23 @@ import path from "node:path";
 import { GIT_VERBS, MANAGEMENT, canonicalCommand, parseScheduleArgs, quote } from "./parse.js";
 import { enqueueJob, executeJob, nextHint, statusHint, tick } from "./runner.js";
 import { help, helpFor, wantsHelp } from "./help.js";
-import { cancelPending, getJob, latestJob, loadStore, pendingJobs, shimDir, type Job } from "./store.js";
+import {
+  cancelQueue,
+  clearCloudConfig,
+  cloudLoginWithToken,
+  fetchAuthConfig,
+  formatCloudStatus,
+  githubDeviceLogin,
+  getQueueJob,
+  isCloudOn,
+  latestQueueJob,
+  listQueue,
+  loadCloudConfig,
+  pendingQueue,
+  saveCloudConfig,
+  newMachineId,
+} from "./cloud.js";
+import { shimDir, type Job } from "./store.js";
 
 const VERSION = "0.1.0";
 
@@ -51,7 +67,7 @@ async function main(): Promise<void> {
 
   if (cmd === "--log" || cmd.startsWith("--log=")) {
     const rest = cmd.startsWith("--log=") ? [cmd.slice("--log=".length), ...argv.slice(1)] : argv.slice(1);
-    handleLogs(rest);
+    await handleLogs(rest);
     return;
   }
 
@@ -76,24 +92,24 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
   switch (cmd) {
     case "list":
     case "ls":
-      printList();
+      await printList();
       return;
     case "cancel":
     case "abort": {
-      handleCancel(cmd, rest);
+      await handleCancel(cmd, rest);
       return;
     }
     case "logs":
-      handleLogs(rest);
+      await handleLogs(rest);
       return;
     case "run": {
       const id = rest[0];
       if (!id) throw new Error("usage: gtimed run <id>");
-      printJobOutcome(await executeJob(requireJob(id)));
+      printJobOutcome(await executeJob(await requireJob(id)));
       return;
     }
     case "tick": {
-      printTick(await tick());
+      await printTick(await tick());
       return;
     }
     case "daemon": {
@@ -138,6 +154,9 @@ async function manage(cmd: string, rest: string[]): Promise<void> {
     case "ui":
       await startUiCli(rest);
       return;
+    case "cloud":
+      await handleCloud(rest);
+      return;
     case "help":
     case "-h":
     case "--help":
@@ -175,7 +194,88 @@ async function startUiCli(rest: string[]): Promise<void> {
   await new Promise(() => {});
 }
 
-function handleCancel(cmd: string, rest: string[]): void {
+async function handleCloud(rest: string[]): Promise<void> {
+  const sub = rest[0];
+  if (!sub || sub === "status") {
+    console.log(formatCloudStatus());
+    return;
+  }
+  if (sub === "set") {
+    const url = rest[1]?.replace(/\/+$/, "");
+    if (!url) throw new Error("usage: gtimed cloud set <url>");
+    const existing = loadCloudConfig();
+    saveCloudConfig({
+      url,
+      token: existing?.token ?? "",
+      machineId: existing?.machineId || newMachineId(),
+      enabled: existing?.enabled ?? false,
+      githubUser: existing?.githubUser,
+    });
+    console.log(`cloud url ${url}`);
+    return;
+  }
+  if (sub === "on") {
+    const cfg = loadCloudConfig();
+    if (!cfg?.token) throw new Error("not logged in. gtimed cloud login --token <github-pat>");
+    saveCloudConfig({ ...cfg, enabled: true });
+    console.log("cloud on");
+    console.log(formatCloudStatus());
+    return;
+  }
+  if (sub === "off") {
+    const cfg = loadCloudConfig();
+    if (!cfg) {
+      console.log("cloud is off (not logged in)");
+      return;
+    }
+    saveCloudConfig({ ...cfg, enabled: false });
+    console.log("cloud off — new schedules stay in ~/.gtimed/jobs.json");
+    return;
+  }
+  if (sub === "logout") {
+    clearCloudConfig();
+    console.log("logged out. cloud is off.");
+    return;
+  }
+  if (sub === "login") {
+    let token = "";
+    const urlFlag = rest.indexOf("--url");
+    const tokenFlag = rest.indexOf("--token");
+    const url = urlFlag >= 0 ? rest[urlFlag + 1] : undefined;
+    if (tokenFlag >= 0) token = rest[tokenFlag + 1] ?? "";
+    else if (rest[1] && !rest[1].startsWith("-")) token = rest[1];
+    if (url) {
+      const existing = loadCloudConfig();
+      saveCloudConfig({
+        url: url.replace(/\/+$/, ""),
+        token: existing?.token ?? "",
+        machineId: existing?.machineId || newMachineId(),
+        enabled: existing?.enabled ?? false,
+        githubUser: existing?.githubUser,
+      });
+    }
+    if (!token) {
+      const cfg = await fetchAuthConfig(url);
+      if (cfg.githubClientId) {
+        token = await githubDeviceLogin(cfg.githubClientId);
+      } else {
+        throw new Error("usage: gtimed cloud login --token <github-pat>");
+      }
+    }
+    const logged = await cloudLoginWithToken(token, url);
+    console.log(`logged in as ${logged.githubUser ?? "github"}`);
+    console.log(formatCloudStatus());
+    return;
+  }
+  console.log(`usage:
+  gtimed cloud
+  gtimed cloud login --token <github-pat>
+  gtimed cloud on | off
+  gtimed cloud logout
+  gtimed cloud set <url>`);
+}
+
+async function handleCancel(cmd: string, rest: string[]): Promise<void> {
   const arg = rest[0];
   const all =
     (cmd === "abort" && !arg) ||
@@ -185,7 +285,7 @@ function handleCancel(cmd: string, rest: string[]): void {
     arg === "*";
 
   if (all) {
-    const cancelled = cancelPending("all");
+    const cancelled = await cancelQueue("all");
     if (!cancelled.length) {
       console.log("no pending jobs");
       return;
@@ -198,7 +298,7 @@ function handleCancel(cmd: string, rest: string[]): void {
   }
 
   if (!arg) {
-    const pending = pendingJobs();
+    const pending = await pendingQueue();
     if (!pending.length) {
       console.log("no pending jobs");
       return;
@@ -212,7 +312,7 @@ function handleCancel(cmd: string, rest: string[]): void {
     return;
   }
 
-  const cancelled = cancelPending(arg === "last" ? "last" : arg);
+  const cancelled = await cancelQueue(arg === "last" ? "last" : arg);
   if (!cancelled.length) {
     throw new Error(`no pending job matching "${arg}"`);
   }
@@ -221,24 +321,28 @@ function handleCancel(cmd: string, rest: string[]): void {
   }
 }
 
-function handleLogs(rest: string[]): void {
+async function handleLogs(rest: string[]): Promise<void> {
   const arg = rest[0];
-  const job = !arg || arg === "last" ? latestJob() : requireJob(arg);
+  const job = !arg || arg === "last" ? await latestQueueJob() : await requireJob(arg);
   if (!job) {
     console.log("no jobs");
     return;
   }
   console.log(`${job.id}  ${statusHint(job)}  ${quote(job.command)}`);
   const hasLog = fs.existsSync(job.logFile) && fs.statSync(job.logFile).size > 0;
-  if (!hasLog) {
-    if (job.status === "pending") {
-      console.log(`has not run yet  (waiting ${nextHint(job)})`);
-    } else {
-      console.log("(no log yet)");
-    }
+  if (hasLog) {
+    process.stdout.write(fs.readFileSync(job.logFile, "utf8"));
     return;
   }
-  process.stdout.write(fs.readFileSync(job.logFile, "utf8"));
+  if (job.logText?.trim()) {
+    process.stdout.write(job.logText.endsWith("\n") ? job.logText : `${job.logText}\n`);
+    return;
+  }
+  if (job.status === "pending") {
+    console.log(`has not run yet  (waiting ${nextHint(job)})`);
+  } else {
+    console.log("(no log yet)");
+  }
 }
 
 async function handleCompletion(rest: string[]): Promise<void> {
@@ -304,7 +408,7 @@ async function schedule(argv: string[]): Promise<void> {
     return;
   }
 
-  const { job, replaced } = enqueueJob({
+  const { job, replaced, note } = await enqueueJob({
     ...parsed,
     cwd: parsed.cwd ? path.resolve(parsed.cwd) : process.cwd(),
   });
@@ -317,6 +421,10 @@ async function schedule(argv: string[]): Promise<void> {
   console.log(`${replaced ? "updated" : "scheduled"} ${job.id}`);
   console.log(`  cmd   ${quote(job.command)}`);
   console.log(`  cwd   ${job.cwd}`);
+  if (isCloudOn()) {
+    console.log(`  cloud ${job.kind === "github" ? "github (can fire while this PC sleeps)" : "stored; this machine runs it"}`);
+  }
+  if (note) console.log(`  note  ${note}`);
   console.log(`  not run yet — waiting ${nextHint(job)}${job.when.length ? ` if ${job.when.join(" & ")}` : ""}`);
 }
 
@@ -332,14 +440,14 @@ function printJobOutcome(job: Job): void {
   console.log(`${job.id} -> ${job.status}${job.lastError ? ` (${job.lastError})` : ""}`);
 }
 
-function printTick(ran: Job[]): void {
+async function printTick(ran: Job[]): Promise<void> {
   if (ran.length) {
     console.log(`ran ${ran.length} job(s):`);
     for (const j of ran) printJobOutcome(j);
   } else {
     console.log("nothing due to run");
   }
-  const waiting = loadStore().jobs.filter((j) => j.status === "pending");
+  const waiting = (await listQueue()).filter((j) => j.status === "pending");
   if (!waiting.length) return;
   console.log("still waiting:");
   for (const j of waiting) {
@@ -347,8 +455,8 @@ function printTick(ran: Job[]): void {
   }
 }
 
-function printList(): void {
-  const jobs = loadStore().jobs;
+async function printList(): Promise<void> {
+  const jobs = await listQueue();
   if (!jobs.length) {
     console.log("no jobs");
     return;
@@ -359,8 +467,8 @@ function printList(): void {
   }
 }
 
-function requireJob(id: string) {
-  const job = getJob(id);
+async function requireJob(id: string) {
+  const job = await getQueueJob(id);
   if (!job) throw new Error(`unknown job "${id}"`);
   return job;
 }

@@ -22,6 +22,7 @@ export const ROOT_COMMANDS = [
   "uninstall",
   "completion",
   "ui",
+  "cloud",
   "help",
   "--help",
   "-h",
@@ -49,6 +50,7 @@ export const DURATIONS = ["30s", "1m", "5m", "10m", "15m", "20m", "30m", "1h", "
 const JOB_CMDS = new Set(["cancel", "abort", "logs", "log", "--log", "run"]);
 const CANCEL_EXTRAS = ["--all", "all", "last"];
 const COMPLETION_CMDS = ["bash", "zsh", "fish", "powershell", "install", "uninstall"];
+const CLOUD_CMDS = ["login", "on", "off", "logout", "set", "status"];
 const FLAG_NAMES = Object.keys(FLAGS);
 const VALUE_FLAGS = new Set(
   Object.entries(FLAGS)
@@ -92,6 +94,8 @@ export function suggestions(words: string[], cword: number, opts: SuggestOpts = 
     pool = [...ROOT_COMMANDS, ...GIT_VERBS, ...FLAG_NAMES];
   } else if (words[1] === "completion" && cword === 2) {
     pool = COMPLETION_CMDS;
+  } else if (words[1] === "cloud" && cword === 2) {
+    pool = CLOUD_CMDS;
   } else if (
     (words[1] === "cancel" || words[1] === "abort") &&
     cword === 2

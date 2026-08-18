@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -27,14 +27,51 @@ export function git(cwd: string, args: string[]): string {
   return (r.stdout ?? "").trim();
 }
 
-export function runCli(home: string, args: string[], cwd = process.cwd()) {
+export function runCli(
+  home: string,
+  args: string[],
+  cwd = process.cwd(),
+  extraEnv: Record<string, string | undefined> = {},
+) {
   const entry = fileURLToPath(new URL("./index.ts", import.meta.url));
   const tsx = path.join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+  const env = { ...process.env, GTIMED_HOME: home, ...extraEnv };
   return spawnSync(process.execPath, [tsx, entry, ...args], {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, GTIMED_HOME: home },
+    env,
     windowsHide: true,
     timeout: 20_000,
+  });
+}
+
+export function runCliAsync(
+  home: string,
+  args: string[],
+  cwd = process.cwd(),
+  extraEnv: Record<string, string | undefined> = {},
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  const entry = fileURLToPath(new URL("./index.ts", import.meta.url));
+  const tsx = path.join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+  const env = { ...process.env, GTIMED_HOME: home, ...extraEnv };
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [tsx, entry, ...args], {
+      cwd,
+      env,
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (d: Buffer) => {
+      stdout += d.toString("utf8");
+    });
+    child.stderr?.on("data", (d: Buffer) => {
+      stderr += d.toString("utf8");
+    });
+    const timer = setTimeout(() => child.kill(), 20_000);
+    child.on("close", (status) => {
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr });
+    });
   });
 }

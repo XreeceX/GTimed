@@ -5,7 +5,7 @@
 ### Run git later — without changing git
 
 [![CI](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml/badge.svg)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-248-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-281-2ea44f)](https://github.com/XreeceX/GTimed/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![node](https://img.shields.io/badge/node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 
@@ -27,7 +27,7 @@
 
 <p><code>git</code> stays normal. Delay flags live on <code>gtimed</code> only.</p>
 
-[Install](#install) · [Usage](#usage) · [Flags](#flags) · [Conditions](#conditions) · [Development](#development)
+[Install](#install) · [Usage](#usage) · [Flags](#flags) · [Conditions](#conditions) · [Cloud](#cloud) · [Development](#development)
 
 </div>
 
@@ -259,6 +259,7 @@ gtimed install / uninstall
 gtimed completion install
 gtimed completion uninstall
 gtimed ui
+gtimed cloud
 gtimed help                 # also: -h, --help
 gtimed version              # also: -V, --version
 ```
@@ -305,6 +306,28 @@ The folder `vscode-extension/` adds clock / upload buttons next to Git's Commit.
 
 ---
 
+## Cloud
+
+Optional. The CLI still works with no account. When cloud is **on**, new schedules are stored on a Vercel API (no website) instead of `~/.gtimed/jobs.json`.
+
+```bash
+gtimed cloud set https://your-app.vercel.app
+gtimed cloud login --token <github-pat>
+gtimed cloud on
+gtimed cloud off
+gtimed cloud logout
+```
+
+Configure once, like a git remote (`gtimed cloud`, not `gtimed remote`). Schedule commands do not gain extra flags.
+
+- **GitHub-side** (`git push`, `gh pr create`, tag push): this PC uploads a holding ref at schedule time. Vercel fires the GitHub API at `dueAt`, even if the laptop is off.
+- **Local-only** (`git commit`, `--when clean`, `npm`, cron): Vercel only holds the row. This machine’s minute tick downloads due jobs and runs them here.
+- Cloud on needs network. There is no silent fallback to `jobs.json`. Cloud off keeps today’s local queue.
+
+The API lives in [`cloud/`](cloud/). Deploy with Upstash Redis + QStash (Hobby Cron is once per day; do not use it for `--in 20m`). See [cloud/README.md](cloud/README.md).
+
+---
+
 ## How a tick decides to run
 
 1. Load pending jobs.
@@ -323,10 +346,12 @@ Queue: `~/.gtimed/jobs.json` (`GTIMED_HOME` to override). Logs: `~/.gtimed/logs/
 
 ## Safety
 
-- A scheduled push uses this machine, your remotes, your credentials, at fire time. Not GitHub Actions.
-- Nothing is snapshotted. Extra commits you make before a delayed push are included. A delayed commit uses whatever is staged **then**.
+- A scheduled push uses this machine, your remotes, your credentials, at fire time — unless **cloud** is on and the job is GitHub-side, in which case GTimed’s API promotes a holding ref via the GitHub API.
+- Nothing is snapshotted for local jobs. Extra commits you make before a delayed local push are included. A delayed commit uses whatever is staged **then**.
+- Cloud GitHub-side jobs snapshot the SHA you had when you scheduled (holding ref `refs/gtimed/<id>`).
 - `cmd:` is a shell. Don't put commands you don't trust in it.
 - No confirm prompt. `gtimed push --in 1m` will push.
+- Cloud tokens live in `~/.gtimed/cloud.json` (mode 600). They are not printed in list, logs, or help.
 
 Sleeping laptops don't fire until the next tick after wake. `--every` is stored but does not change the OS timer.
 
@@ -337,12 +362,13 @@ Sleeping laptops don't fire until the next tick after wake. `--every` is stored 
 ```bash
 npm install
 npm run build
-npm test          # 248 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
+npm test          # 281 tests (Ubuntu, Windows, macOS × Node 18, 20, and 22)
 npx tsx src/index.ts --help
 ```
 
 ```text
 src/               CLI, parser, tick, store, tests
+cloud/             optional Vercel API (no frontend)
 scripts/           one-line installer (install.sh / install.ps1 / install.mjs)
 ui/                browser panel for gtimed ui
 vscode-extension/  SCM buttons

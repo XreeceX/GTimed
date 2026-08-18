@@ -70,3 +70,11 @@ test("helpFor uses aliases", () => {
   assert.match(helpFor(["dm", "-h"]), /Usage: gtimed daemon/);
   assert.match(helpFor(["ls", "--help"]), /Usage: gtimed list/);
 });
+
+test("helpFor cloud explains the hosted queue", () => {
+  const text = helpFor(["cloud", "--help"]);
+  assert.match(text, /Usage: gtimed cloud/);
+  assert.match(text, /login --token/);
+  assert.doesNotMatch(text, /gtm_/);
+  assert.doesNotMatch(text, /\bgt push\b/);
+});

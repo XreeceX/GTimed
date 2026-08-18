@@ -156,10 +156,10 @@ test("tick runs a due dry-run cron job once per minute", async () => {
   assert.equal(ran2.length, 0);
 });
 
-test("rescheduling the same command overwrites the pending time", () => {
+test("rescheduling the same command overwrites the pending time", async () => {
   isolatedHome();
   const cwd = process.cwd();
-  const first = enqueueJob({
+  const first = await enqueueJob({
     command: ["git", "push"],
     cwd,
     in: "20m",
@@ -170,7 +170,7 @@ test("rescheduling the same command overwrites the pending time", () => {
   });
   assert.equal(first.replaced, false);
 
-  const second = enqueueJob({
+  const second = await enqueueJob({
     command: ["git", "push"],
     cwd,
     in: "5m",
@@ -189,10 +189,10 @@ test("rescheduling the same command overwrites the pending time", () => {
   assert.equal(pending.length, 1);
 });
 
-test("a different command or cwd keeps a separate job", () => {
+test("a different command or cwd keeps a separate job", async () => {
   isolatedHome();
   const cwd = process.cwd();
-  const push = enqueueJob({
+  const push = await enqueueJob({
     command: ["git", "push"],
     cwd,
     in: "20m",
@@ -201,7 +201,7 @@ test("a different command or cwd keeps a separate job", () => {
     now: false,
     sameBranch: false,
   });
-  const commit = enqueueJob({
+  const commit = await enqueueJob({
     command: ["git", "commit", "-m", "x"],
     cwd,
     in: "20m",
@@ -214,7 +214,7 @@ test("a different command or cwd keeps a separate job", () => {
   assert.notEqual(commit.job.id, push.job.id);
 
   const other = fs.mkdtempSync(path.join(os.tmpdir(), "gtimed-cwd-"));
-  const pushOther = enqueueJob({
+  const pushOther = await enqueueJob({
     command: ["git", "push"],
     cwd: other,
     in: "5m",
@@ -351,9 +351,9 @@ test("nextHint prefers cron then at then when", () => {
   assert.equal(nextHint(stubJob({})), "soon");
 });
 
-test("enqueueJob stores UTC ISO even though nextHint is local", () => {
+test("enqueueJob stores UTC ISO even though nextHint is local", async () => {
   isolatedHome();
-  const { job } = enqueueJob({
+  const { job } = await enqueueJob({
     command: ["git", "push"],
     cwd: process.cwd(),
     at: "2026-08-14T10:45:00.000Z",

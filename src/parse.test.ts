@@ -120,6 +120,7 @@ test("command aliases", () => {
 
 test("--log is a management command, not a schedule flag", () => {
   assert.equal(MANAGEMENT.has("--log"), true);
+  assert.equal(MANAGEMENT.has("cloud"), true);
   assert.equal(FLAGS["--log"], undefined);
   const p = parseScheduleArgs(["push", "--in", "5m", "--log"]);
   assert.equal(p.in, "5m");

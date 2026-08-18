@@ -25,6 +25,7 @@ export const MANAGEMENT = new Set([
   "uninstall",
   "completion",
   "ui",
+  "cloud",
   "help",
   "-h",
   "--help",

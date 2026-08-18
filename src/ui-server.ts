@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { repoState, stagePaths } from "./repo.js";
 import { enqueueJob, executeJob } from "./runner.js";
-import { getJob, loadStore, upsertJob } from "./store.js";
+import { listQueue, cancelQueue, getQueueJob } from "./cloud.js";
+import { getJob, upsertJob } from "./store.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -94,7 +95,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, defau
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/jobs") {
-      json(res, 200, { jobs: loadStore().jobs });
+      json(res, 200, { jobs: await listQueue() });
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/stage") {
@@ -121,29 +122,33 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, defau
         until: body.until,
         retry: body.retry,
       };
-      const commitJob = enqueueJob({
-        ...parsed,
-        when: parsed.when,
-        dryRun: parsed.dryRun,
-        now: parsed.now,
-        sameBranch: parsed.sameBranch,
-        cwd: jobCwd,
-      }).job;
-
-      let pushJob = null;
-      if (body.push) {
-        pushJob = enqueueJob({
-          command: ["git", "push"],
-          in: parsed.in,
-          at: parsed.at,
-          cron: parsed.cron,
-          when: [...parsed.when, "ahead"],
+      const commitJob = (
+        await enqueueJob({
+          ...parsed,
+          when: parsed.when,
           dryRun: parsed.dryRun,
           now: parsed.now,
           sameBranch: parsed.sameBranch,
           cwd: jobCwd,
-          name: "push",
-        }).job;
+        })
+      ).job;
+
+      let pushJob = null;
+      if (body.push) {
+        pushJob = (
+          await enqueueJob({
+            command: ["git", "push"],
+            in: parsed.in,
+            at: parsed.at,
+            cron: parsed.cron,
+            when: [...parsed.when, "ahead"],
+            dryRun: parsed.dryRun,
+            now: parsed.now,
+            sameBranch: parsed.sameBranch,
+            cwd: jobCwd,
+            name: "push",
+          })
+        ).job;
       }
 
       if (parsed.now) {
@@ -156,9 +161,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, defau
     }
     if (req.method === "POST" && url.pathname.startsWith("/api/jobs/") && url.pathname.endsWith("/cancel")) {
       const id = url.pathname.split("/")[3] ?? "";
-      const job = getJob(id);
+      const job = await getQueueJob(id);
       if (!job) {
         json(res, 404, { error: "unknown job" });
+        return;
+      }
+      if (job.status === "pending") {
+        const cancelled = await cancelQueue(job.id);
+        json(res, 200, { job: cancelled[0] ?? { ...job, status: "cancelled" } });
         return;
       }
       job.status = "cancelled";
@@ -168,7 +178,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, defau
     }
     if (req.method === "POST" && url.pathname.startsWith("/api/jobs/") && url.pathname.endsWith("/run")) {
       const id = url.pathname.split("/")[3] ?? "";
-      const job = getJob(id);
+      const job = (await getQueueJob(id)) ?? getJob(id);
       if (!job) {
         json(res, 404, { error: "unknown job" });
         return;

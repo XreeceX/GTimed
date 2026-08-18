@@ -43,6 +43,11 @@ test("diagnose does not treat cancel --all or --log=<id> as typos", () => {
   assert.equal(diagnose(["--log=abc123"]), null);
 });
 
+test("diagnose leaves cloud login --token alone", () => {
+  assert.equal(diagnose(["cloud", "login", "--token", "ghp_secret"]), null);
+  assert.equal(diagnose(["cloud", "set", "https://example.vercel.app"]), null);
+});
+
 test("diagnose suggests --timeout for --timout", () => {
   const msg = diagnose(["push", "--in", "5m", "--timout", "2m"]);
   assert.match(msg ?? "", /unknown option "--timout"/);

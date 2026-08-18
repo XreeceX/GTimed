@@ -105,6 +105,17 @@ test("gtimed u → ui", () => {
   assert.ok(out.includes("ui"));
 });
 
+test("gtimed cl → cloud", () => {
+  const out = suggestions(["gtimed", "cl"], 1);
+  assert.ok(out.includes("cloud"));
+});
+
+test("gtimed cloud l → login", () => {
+  const out = suggestions(["gtimed", "cloud", "l"], 2);
+  assert.ok(out.includes("login"));
+  assert.ok(out.includes("logout"));
+});
+
 test("gtimed completion b → bash", () => {
   const out = suggestions(["gtimed", "completion", "b"], 2);
   assert.ok(out.includes("bash"));

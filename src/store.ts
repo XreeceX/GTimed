@@ -36,6 +36,24 @@ export type JobStatus =
   | "cancelled"
   | "skipped";
 
+export type JobKind = "github" | "local";
+
+export type GithubAction = "push" | "pr" | "tag";
+
+export interface GithubTarget {
+  owner: string;
+  repo: string;
+  sha: string;
+  action: GithubAction;
+  branch?: string;
+  holdingRef?: string;
+  tagName?: string;
+  prTitle?: string;
+  prBody?: string;
+  prBase?: string;
+  remote?: string;
+}
+
 export interface Job {
   id: string;
   name?: string;
@@ -62,6 +80,10 @@ export interface Job {
   exitCode?: number;
   lastError?: string;
   logFile: string;
+  kind?: JobKind;
+  machineId?: string;
+  github?: GithubTarget;
+  logText?: string;
 }
 
 export interface StoreFile {
