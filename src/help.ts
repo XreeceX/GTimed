@@ -76,7 +76,7 @@ Rescheduling the same command in the same directory replaces the pending job
 with the new --in / --at / --cron / --when.
 
 Store: ~/.gtimed/jobs.json    Logs: ~/.gtimed/logs/<id>.log
-Optional cloud: gtimed cloud login — queue lives on the API instead of jobs.json.
+Optional cloud: gtimed cloud login — queue lives on GTimed's API (your GitHub account) instead of jobs.json.
 Printed times use your local timezone.
 `.trim();
 }
@@ -157,10 +157,11 @@ Open the local Source Control UI at http://127.0.0.1:8787.`,
    or: gtimed cloud login --token <github-pat>
    or: gtimed cloud on | off | logout | set <url>
 
-Optional hosted queue. When cloud is on, every new schedule is stored on the
-API instead of ~/.gtimed/jobs.json. GitHub push / PR / tag can fire after this
-PC sleeps. Commit, --when clean, and other local commands wait in the API until
-this machine's minute tick runs them.
+Optional hosted queue. When cloud is on, every new schedule is stored on
+GTimed's API (shared by all users, isolated per GitHub account) instead of
+~/.gtimed/jobs.json. GitHub push / PR / tag can fire after this PC sleeps,
+using your GitHub token. Commit, --when clean, and other local commands wait
+in the API until this machine's minute tick runs them.
 
 Scheduling with cloud on needs network. Cloud off keeps today's local path.`,
     version: `Usage: gtimed version

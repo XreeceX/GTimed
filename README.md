@@ -308,23 +308,22 @@ The folder `vscode-extension/` adds clock / upload buttons next to Git's Commit.
 
 ## Cloud
 
-Optional. The CLI still works with no account. When cloud is **on**, new schedules are stored on a Vercel API (no website) instead of `~/.gtimed/jobs.json`.
+Optional. The CLI still works with no account. When cloud is **on**, every new schedule is stored on GTimed's hosted API (no website) instead of `~/.gtimed/jobs.json`. That API is shared by every GTimed user; your jobs sit under your GitHub account, not anyone else's.
 
 ```bash
-gtimed cloud set https://your-app.vercel.app
 gtimed cloud login --token <github-pat>
 gtimed cloud on
 gtimed cloud off
 gtimed cloud logout
 ```
 
+`gtimed cloud set <url>` is only if you run a fork. The default host is already `https://gtimed.vercel.app`.
+
 Configure once, like a git remote (`gtimed cloud`, not `gtimed remote`). Schedule commands do not gain extra flags.
 
-- **GitHub-side** (`git push`, `gh pr create`, tag push): this PC uploads a holding ref at schedule time. Vercel fires the GitHub API at `dueAt`, even if the laptop is off.
-- **Local-only** (`git commit`, `--when clean`, `npm`, cron): Vercel only holds the row. This machine’s minute tick downloads due jobs and runs them here.
+- **GitHub-side** (`git push`, `gh pr create`, tag push): this PC uploads a holding ref at schedule time. The API fires **your** GitHub token at `dueAt`, even if the laptop is off.
+- **Local-only** (`git commit`, `--when clean`, `npm`, cron): the API only holds the row. This machine’s minute tick downloads due jobs and runs them here.
 - Cloud on needs network. There is no silent fallback to `jobs.json`. Cloud off keeps today’s local queue.
-
-Host your own API (Vercel + Upstash Redis + QStash; Hobby Cron is once per day, so do not use it for `--in 20m`) and point the CLI at it with `gtimed cloud set <url>`.
 
 ---
 
@@ -346,7 +345,7 @@ Queue: `~/.gtimed/jobs.json` (`GTIMED_HOME` to override). Logs: `~/.gtimed/logs/
 
 ## Safety
 
-- A scheduled push uses this machine, your remotes, your credentials, at fire time — unless **cloud** is on and the job is GitHub-side, in which case GTimed’s API promotes a holding ref via the GitHub API.
+- A scheduled push uses this machine, your remotes, your credentials, at fire time — unless **cloud** is on and the job is GitHub-side, in which case GTimed’s API promotes a holding ref via **your** GitHub token.
 - Nothing is snapshotted for local jobs. Extra commits you make before a delayed local push are included. A delayed commit uses whatever is staged **then**.
 - Cloud GitHub-side jobs snapshot the SHA you had when you scheduled (holding ref `refs/gtimed/<id>`).
 - `cmd:` is a shell. Don't put commands you don't trust in it.

@@ -75,6 +75,7 @@ test("helpFor cloud explains the hosted queue", () => {
   const text = helpFor(["cloud", "--help"]);
   assert.match(text, /Usage: gtimed cloud/);
   assert.match(text, /login --token/);
+  assert.match(text, /isolated per GitHub account/);
   assert.doesNotMatch(text, /gtm_/);
   assert.doesNotMatch(text, /\bgt push\b/);
 });
